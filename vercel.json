@@ -11,6 +11,10 @@
     {
       "source": "/widget",
       "destination": "/index.html"
+    },
+    {
+      "source": "/widget-setup",
+      "destination": "/index.html"
     }
   ]
 }

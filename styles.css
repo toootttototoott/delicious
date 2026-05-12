@@ -169,7 +169,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   padding: 12px 14px;
   border-radius: 14px;
@@ -277,12 +278,40 @@ input[type="checkbox"] {
   gap: 12px;
 }
 
-.calendar-grid {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  margin-top: 18px;
+.calendar-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 14px;
 }
 
-.calendar-day,
+.calendar-month {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.calendar-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-weekdays,
+.calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.weekday {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.calendar-cell,
 .time-pill {
   display: grid;
   gap: 6px;
@@ -294,16 +323,45 @@ input[type="checkbox"] {
   color: var(--text);
 }
 
-.calendar-day.selected,
+.calendar-cell {
+  min-height: 116px;
+}
+
+.calendar-pad {
+  border: 1px dashed rgba(29, 42, 36, 0.06);
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.calendar-date.has-availability {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(200, 106, 60, 0.08));
+}
+
+.calendar-date.is-full {
+  opacity: 0.62;
+}
+
+.calendar-number {
+  font-size: 1.45rem;
+  font-weight: 700;
+}
+
+.calendar-caption {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.calendar-date.selected,
 .time-pill.selected {
   border-color: var(--accent-dark);
   background: rgba(200, 106, 60, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(142, 69, 37, 0.18);
 }
 
 .time-pill {
   display: inline-flex;
   justify-content: center;
   align-items: center;
+  min-height: 52px;
 }
 
 .times-grid {
@@ -314,6 +372,25 @@ input[type="checkbox"] {
 .widget-form button[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.setup-output {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.copy-row {
+  display: grid;
+  gap: 10px;
+}
+
+.widget-layout {
+  align-items: start;
+}
+
+.widget-calendar-panel {
+  overflow: hidden;
 }
 
 .entity-select {
@@ -407,8 +484,19 @@ input[type="checkbox"] {
 
   .panel-head,
   .entity-row,
-  .list-toolbar {
+  .list-toolbar,
+  .calendar-nav {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .calendar-weekdays,
+  .calendar-month-grid {
+    gap: 8px;
+  }
+
+  .calendar-cell {
+    min-height: 96px;
+    padding: 12px;
   }
 }

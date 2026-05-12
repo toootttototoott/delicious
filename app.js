@@ -10,6 +10,7 @@ const state = {
     users: null,
     companies: null,
     widget: null,
+    widgetSetup: null,
   },
   filters: {
     users: "",
@@ -21,10 +22,14 @@ const state = {
   selectedSeatCountIds: new Set(),
   userForm: createEmptyUserForm(),
   companyForm: createEmptyCompanyForm(),
-  widget: {
+  widgetSetup: {
     companyId: "",
     establishmentId: "",
     seatCountId: "",
+  },
+  widget: {
+    seatCountId: "",
+    currentMonth: monthKey(todayString()),
     selectedDate: "",
     selectedTime: "",
   },
@@ -35,6 +40,7 @@ const routes = new Map([
   ["/login", renderLoginPage],
   ["/settings", renderSettingsPage],
   ["/widget", renderWidgetPage],
+  ["/widget-setup", renderWidgetSetupPage],
 ]);
 
 document.addEventListener("click", (event) => {
@@ -55,6 +61,7 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("popstate", () => {
+  syncWidgetFromLocation();
   render();
 });
 
@@ -133,26 +140,22 @@ document.addEventListener("change", async (event) => {
     return;
   }
 
-  if (event.target.matches("[data-widget-company]")) {
-    state.widget.companyId = event.target.value;
-    syncWidgetSelections();
-    await refreshWidgetAvailability();
+  if (event.target.matches("[data-setup-company]")) {
+    state.widgetSetup.companyId = event.target.value;
+    syncWidgetSetupSelections();
     render();
     return;
   }
 
-  if (event.target.matches("[data-widget-establishment]")) {
-    state.widget.establishmentId = event.target.value;
-    syncWidgetSelections();
-    await refreshWidgetAvailability();
+  if (event.target.matches("[data-setup-establishment]")) {
+    state.widgetSetup.establishmentId = event.target.value;
+    syncWidgetSetupSelections();
     render();
     return;
   }
 
-  if (event.target.matches("[data-widget-seat-count]")) {
-    state.widget.seatCountId = event.target.value;
-    syncWidgetSelections();
-    await refreshWidgetAvailability();
+  if (event.target.matches("[data-setup-seat-count]")) {
+    state.widgetSetup.seatCountId = event.target.value;
     render();
   }
 });
@@ -163,6 +166,8 @@ async function boot() {
   if (results[1]?.status === "rejected") {
     setStatus("widget", "error", "Widget data could not be loaded.");
   }
+
+  syncWidgetFromLocation();
 
   if (location.pathname === "/") {
     history.replaceState({}, "", "/login");
@@ -190,24 +195,20 @@ async function loadWidgetCatalog() {
   }
 
   state.widgetCatalog = payload.catalog ?? [];
-  syncWidgetSelections();
-  await refreshWidgetAvailability();
+  syncWidgetSetupSelections();
 }
 
-function navigate(pathname) {
-  history.pushState({}, "", pathname);
+function navigate(target) {
+  history.pushState({}, "", target);
+  syncWidgetFromLocation();
   render();
 }
 
 function render() {
-  if (
-    location.pathname === "/settings" &&
-    state.userCount > 0 &&
-    state.session?.authLevel !== "admin"
-  ) {
+  if (needsAdminRedirect("/settings") || needsAdminRedirect("/widget-setup")) {
     history.replaceState({}, "", "/login");
     if (!state.statuses.auth) {
-      state.statuses.auth = { kind: "error", message: "Admin access required to open settings." };
+      state.statuses.auth = { kind: "error", message: "Admin access required." };
     }
   }
 
@@ -217,12 +218,20 @@ function render() {
   app.innerHTML = (routes.get(location.pathname) ?? renderLoginPage)();
 }
 
+function needsAdminRedirect(pathname) {
+  return (
+    location.pathname === pathname &&
+    state.userCount > 0 &&
+    state.session?.authLevel !== "admin"
+  );
+}
+
 function renderTopnav() {
   const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
-
   return `
     <a href="/login" data-link>Display</a>
-    <a href="/widget" data-link>Widget View</a>
+    <a href="/widget${state.widget.seatCountId ? `?seatCountId=${encodeURIComponent(state.widget.seatCountId)}` : ""}" data-link>Widget View</a>
+    ${canViewSettings ? '<a href="/widget-setup" data-link>Widget Setup</a>' : ""}
     ${canViewSettings ? '<a href="/settings" data-link>Settings</a>' : ""}
   `;
 }
@@ -384,28 +393,27 @@ function renderSettingsPage() {
   `;
 }
 
-function renderWidgetPage() {
+function renderWidgetSetupPage() {
   const companies = state.widgetCatalog;
-  const establishments = getWidgetEstablishments();
-  const seatCounts = getWidgetSeatCounts();
-  const activeDate = state.widget.selectedDate
-    ? state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)
-    : null;
+  const establishments = getWidgetSetupEstablishments();
+  const seatCounts = getWidgetSetupSeatCounts();
+  const widgetUrl = getWidgetUrl();
+  const iframeSnippet = `<iframe src="${widgetUrl}" style="width:100%;min-height:900px;border:0;" loading="lazy"></iframe>`;
 
   return `
     <section class="layout">
       <article class="panel wide">
-        <p class="eyebrow">Widget view</p>
-        <h2>Booking calendar</h2>
-        <p class="meta">Choose a seat-count calendar, click a day, choose a time, then submit the booking.</p>
+        <p class="eyebrow">Widget setup</p>
+        <h2>Choose the widget source</h2>
+        <p class="meta">This is the admin-only place to select which seat-count calendar a website should embed.</p>
         <div class="form-grid">
           <div class="field">
-            <label for="widget-company">Company</label>
-            <select id="widget-company" data-widget-company>
+            <label for="setup-company">Company</label>
+            <select id="setup-company" data-setup-company>
               ${companies
                 .map(
                   (company) => `
-                    <option value="${company.id}" ${state.widget.companyId === company.id ? "selected" : ""}>
+                    <option value="${company.id}" ${state.widgetSetup.companyId === company.id ? "selected" : ""}>
                       ${escapeHtml(company.name)}
                     </option>
                   `,
@@ -414,12 +422,12 @@ function renderWidgetPage() {
             </select>
           </div>
           <div class="field">
-            <label for="widget-establishment">Establishment</label>
-            <select id="widget-establishment" data-widget-establishment>
+            <label for="setup-establishment">Establishment</label>
+            <select id="setup-establishment" data-setup-establishment>
               ${establishments
                 .map(
                   (establishment) => `
-                    <option value="${establishment.id}" ${state.widget.establishmentId === establishment.id ? "selected" : ""}>
+                    <option value="${establishment.id}" ${state.widgetSetup.establishmentId === establishment.id ? "selected" : ""}>
                       ${escapeHtml(establishment.name)}
                     </option>
                   `,
@@ -428,12 +436,12 @@ function renderWidgetPage() {
             </select>
           </div>
           <div class="field full">
-            <label for="widget-seat-count">Seat-count calendar</label>
-            <select id="widget-seat-count" data-widget-seat-count>
+            <label for="setup-seat-count">Seat-count calendar</label>
+            <select id="setup-seat-count" data-setup-seat-count>
               ${seatCounts
                 .map(
                   (seatCount) => `
-                    <option value="${seatCount.id}" ${state.widget.seatCountId === seatCount.id ? "selected" : ""}>
+                    <option value="${seatCount.id}" ${state.widgetSetup.seatCountId === seatCount.id ? "selected" : ""}>
                       ${escapeHtml(seatCount.label)}
                     </option>
                   `,
@@ -442,14 +450,64 @@ function renderWidgetPage() {
             </select>
           </div>
         </div>
-        ${renderStatus("widget")}
-        <div class="calendar-grid">
-          ${renderWidgetDates()}
+        ${renderStatus("widgetSetup")}
+        <div class="setup-output">
+          <label>Widget URL</label>
+          <div class="copy-row">
+            <input readonly value="${escapeHtml(widgetUrl)}" />
+            <button type="button" class="ghost-button" data-action="copyWidgetUrl" data-url="${escapeHtml(widgetUrl)}">Copy URL</button>
+            <button type="button" class="ghost-button" data-action="openWidgetPreview" data-url="${escapeHtml(widgetUrl)}">Open preview</button>
+          </div>
+        </div>
+        <div class="setup-output">
+          <label>Embed code</label>
+          <div class="copy-row">
+            <textarea readonly rows="4">${escapeHtml(iframeSnippet)}</textarea>
+            <button type="button" class="ghost-button" data-action="copyWidgetEmbed" data-url="${escapeHtml(iframeSnippet)}">Copy embed</button>
+          </div>
         </div>
       </article>
       <aside class="panel side">
+        <p class="eyebrow">Preview target</p>
+        <h3>${escapeHtml(getSelectedSeatCountLabel() || "No seat count selected")}</h3>
+        <p class="meta">${escapeHtml(getSelectedEstablishmentLabel() || "")}</p>
+        <p class="meta">The public widget no longer shows company, establishment, or seat-count selectors. Those are configured here and passed in the URL.</p>
+      </aside>
+    </section>
+  `;
+}
+
+function renderWidgetPage() {
+  if (!state.widget.seatCountId || !getSelectedWidgetSeatCount()) {
+    return `
+      <section class="layout">
+        <article class="panel full-width">
+          <p class="eyebrow">Widget view</p>
+          <h2>Widget not configured</h2>
+          <p class="meta">This booking widget needs a configured seatCountId in the URL.</p>
+          <p class="meta">Example: <code>/widget?seatCountId=...</code></p>
+        </article>
+      </section>
+    `;
+  }
+
+  const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
+  const seatCountLabel = getSelectedWidgetSeatCount().label;
+  const establishmentLabel = getSelectedWidgetSeatCount().establishmentLabel;
+
+  return `
+    <section class="layout widget-layout">
+      <article class="panel wide widget-calendar-panel">
+        <p class="eyebrow">Booking widget</p>
+        <h2>${escapeHtml(seatCountLabel)}</h2>
+        <p class="meta">${escapeHtml(establishmentLabel)}</p>
+        ${renderStatus("widget")}
+        ${renderCalendarNavigator()}
+        ${renderWidgetCalendar()}
+      </article>
+      <aside class="panel side">
         <p class="eyebrow">Booking details</p>
-        <h3>${activeDate ? activeDate.date : "Choose a day"}</h3>
+        <h3>${state.widget.selectedDate ? escapeHtml(state.widget.selectedDate) : "Choose a day"}</h3>
         <div class="times-grid">
           ${renderWidgetTimes(activeDate)}
         </div>
@@ -612,9 +670,7 @@ function renderCompanyForm() {
 
 function renderUsers() {
   const companiesById = new Map(state.companies.map((company) => [company.id, company.name]));
-  const establishmentsById = new Map(
-    getAllEstablishments().map((establishment) => [establishment.id, establishment]),
-  );
+  const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment]));
   const users = getFilteredUsers();
 
   if (!users.length) {
@@ -627,7 +683,6 @@ function renderUsers() {
       const establishment = user.establishmentId
         ? establishmentsById.get(user.establishmentId)?.name ?? "Unknown establishment"
         : "No establishment";
-
       return `
         <article class="entity-card">
           <label class="checkbox entity-select">
@@ -733,25 +788,9 @@ function renderEstablishment(company, establishment) {
           <p class="meta">${escapeHtml(company.name)}</p>
         </div>
         <div class="stack-inline">
-          <button
-            type="button"
-            class="ghost-button"
-            data-action="editEstablishment"
-            data-company-id="${company.id}"
-            data-establishment-id="${establishment.id}"
-          >Edit</button>
-          <button
-            type="button"
-            class="ghost-button"
-            data-action="deleteEstablishment"
-            data-establishment-id="${establishment.id}"
-          >Delete</button>
-          <button
-            type="button"
-            class="ghost-button"
-            data-action="addSeatCount"
-            data-establishment-id="${establishment.id}"
-          >Add seat count</button>
+          <button type="button" class="ghost-button" data-action="editEstablishment" data-company-id="${company.id}" data-establishment-id="${establishment.id}">Edit</button>
+          <button type="button" class="ghost-button" data-action="deleteEstablishment" data-establishment-id="${establishment.id}">Delete</button>
+          <button type="button" class="ghost-button" data-action="addSeatCount" data-establishment-id="${establishment.id}">Add seat count</button>
         </div>
       </div>
       <div class="chip-row">
@@ -771,20 +810,8 @@ function renderEstablishment(company, establishment) {
                         <span></span>
                       </label>
                       ${seatCount.seatCount} seats
-                      <button
-                        type="button"
-                        class="mini-button"
-                        data-action="editSeatCount"
-                        data-establishment-id="${establishment.id}"
-                        data-seat-count-id="${seatCount.id}"
-                        data-seat-count="${seatCount.seatCount}"
-                      >Edit</button>
-                      <button
-                        type="button"
-                        class="mini-button"
-                        data-action="deleteSeatCount"
-                        data-seat-count-id="${seatCount.id}"
-                      >Delete</button>
+                      <button type="button" class="mini-button" data-action="editSeatCount" data-establishment-id="${establishment.id}" data-seat-count-id="${seatCount.id}" data-seat-count="${seatCount.seatCount}">Edit</button>
+                      <button type="button" class="mini-button" data-action="deleteSeatCount" data-seat-count-id="${seatCount.id}">Delete</button>
                     </span>
                   `,
                 )
@@ -796,27 +823,57 @@ function renderEstablishment(company, establishment) {
   `;
 }
 
-function renderWidgetDates() {
-  if (!state.widgetAvailability.length) {
-    return '<div class="empty">No seat-count calendars available yet.</div>';
+function renderCalendarNavigator() {
+  const label = formatMonthLabel(state.widget.currentMonth);
+  return `
+    <div class="calendar-nav">
+      <button type="button" class="ghost-button" data-action="previousWidgetMonth">Previous</button>
+      <div class="calendar-month">${escapeHtml(label)}</div>
+      <button type="button" class="ghost-button" data-action="nextWidgetMonth">Next</button>
+    </div>
+  `;
+}
+
+function renderWidgetCalendar() {
+  const { year, monthIndex } = parseMonthKey(state.widget.currentMonth);
+  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+  const monthEndDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const firstWeekday = (monthStart.getUTCDay() + 6) % 7;
+  const availabilityByDate = new Map(state.widgetAvailability.map((item) => [item.date, item]));
+  const weekdayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    .map((day) => `<div class="weekday">${day}</div>`)
+    .join("");
+
+  const cells = [];
+
+  for (let index = 0; index < firstWeekday; index += 1) {
+    cells.push('<div class="calendar-cell calendar-pad"></div>');
   }
 
-  return state.widgetAvailability
-    .map((date) => {
-      const availableCount = date.slots.filter((slot) => slot.available).length;
-      return `
-        <button
-          type="button"
-          class="calendar-day ${state.widget.selectedDate === date.date ? "selected" : ""}"
-          data-action="selectWidgetDate"
-          data-date="${date.date}"
-        >
-          <strong>${date.date}</strong>
-          <span>${availableCount} slots free</span>
-        </button>
-      `;
-    })
-    .join("");
+  for (let day = 1; day <= monthEndDay; day += 1) {
+    const date = toDateString(year, monthIndex, day);
+    const availability = availabilityByDate.get(date);
+    const availableCount = availability?.slots.filter((slot) => slot.available).length ?? 0;
+    const isSelected = state.widget.selectedDate === date;
+    cells.push(`
+      <button
+        type="button"
+        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${availableCount ? "has-availability" : "is-full"}"
+        data-action="selectWidgetDate"
+        data-date="${date}"
+      >
+        <span class="calendar-number">${day}</span>
+        <span class="calendar-caption">${availableCount ? `${availableCount} free` : "Full"}</span>
+      </button>
+    `);
+  }
+
+  return `
+    <div class="calendar-shell">
+      <div class="calendar-weekdays">${weekdayHeaders}</div>
+      <div class="calendar-month-grid">${cells.join("")}</div>
+    </div>
+  `;
 }
 
 function renderWidgetTimes(activeDate) {
@@ -825,23 +882,39 @@ function renderWidgetTimes(activeDate) {
   }
 
   return activeDate.slots
-    .map((slot) => `
-      <button
-        type="button"
-        class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
-        data-action="selectWidgetTime"
-        data-time="${slot.time}"
-        ${slot.available ? "" : "disabled"}
-      >
-        ${slot.time}
-      </button>
-    `)
+    .map(
+      (slot) => `
+        <button
+          type="button"
+          class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
+          data-action="selectWidgetTime"
+          data-time="${slot.time}"
+          ${slot.available ? "" : "disabled"}
+        >
+          ${slot.time}
+        </button>
+      `,
+    )
     .join("");
 }
 
 async function handleAction(action, dataset) {
   if (action === "logout") {
     await logout();
+    return;
+  }
+
+  if (action === "previousWidgetMonth") {
+    state.widget.currentMonth = shiftMonth(state.widget.currentMonth, -1);
+    await refreshWidgetAvailability();
+    render();
+    return;
+  }
+
+  if (action === "nextWidgetMonth") {
+    state.widget.currentMonth = shiftMonth(state.widget.currentMonth, 1);
+    await refreshWidgetAvailability();
+    render();
     return;
   }
 
@@ -855,6 +928,17 @@ async function handleAction(action, dataset) {
   if (action === "selectWidgetTime") {
     state.widget.selectedTime = dataset.time;
     render();
+    return;
+  }
+
+  if (action === "copyWidgetUrl" || action === "copyWidgetEmbed") {
+    await navigator.clipboard.writeText(dataset.url);
+    setStatus("widgetSetup", "success", "Copied.");
+    return;
+  }
+
+  if (action === "openWidgetPreview") {
+    navigate(dataset.url);
     return;
   }
 
@@ -963,11 +1047,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "bulkDeleteEstablishments", establishmentIds: Array.from(state.selectedEstablishmentIds) },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "bulkDeleteEstablishments", establishmentIds: Array.from(state.selectedEstablishmentIds) }, "companies");
     state.selectedEstablishmentIds.clear();
     await refreshAdminState();
     setStatus("companies", "success", "Selected establishments deleted.");
@@ -979,11 +1059,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "bulkDeleteSeatCounts", seatCountIds: Array.from(state.selectedSeatCountIds) },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "bulkDeleteSeatCounts", seatCountIds: Array.from(state.selectedSeatCountIds) }, "companies");
     state.selectedSeatCountIds.clear();
     await refreshAdminState();
     setStatus("companies", "success", "Selected seat counts deleted.");
@@ -1014,11 +1090,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "updateEstablishment", establishmentId: dataset.establishmentId, companyId: dataset.companyId, name },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "updateEstablishment", establishmentId: dataset.establishmentId, companyId: dataset.companyId, name }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Establishment updated.");
     return;
@@ -1054,11 +1126,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "updateSeatCount", seatCountId: dataset.seatCountId, establishmentId: dataset.establishmentId, seatCount },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "updateSeatCount", seatCountId: dataset.seatCountId, establishmentId: dataset.establishmentId, seatCount }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Seat count updated.");
     return;
@@ -1139,9 +1207,9 @@ async function handleWidgetBooking(form) {
   }
 
   const data = await postJson("/api/widget", payload, "widget");
-  await refreshWidgetAvailability();
   form.reset();
   state.widget.selectedTime = "";
+  await refreshWidgetAvailability();
   setStatus("widget", "success", data.message ?? "Booking confirmed.");
 }
 
@@ -1163,6 +1231,7 @@ async function logout() {
 
 async function refreshAdminState() {
   await Promise.all([loadSession(), loadWidgetCatalog()]);
+  syncWidgetFromLocation();
   render();
 }
 
@@ -1174,9 +1243,10 @@ async function refreshWidgetAvailability() {
     return;
   }
 
-  const fromDate = todayString();
+  const monthStart = monthStartDate(state.widget.currentMonth);
+  const days = daysInMonth(state.widget.currentMonth);
   const response = await fetch(
-    `/api/widget?action=availability&seatCountId=${encodeURIComponent(state.widget.seatCountId)}&fromDate=${encodeURIComponent(fromDate)}&days=14`,
+    `/api/widget?action=availability&seatCountId=${encodeURIComponent(state.widget.seatCountId)}&fromDate=${encodeURIComponent(monthStart)}&days=${days}`,
   );
   const data = await readApiResponse(response);
 
@@ -1335,9 +1405,7 @@ function toggleSelection(selection, id, checked) {
 function pruneSelections() {
   const userIds = new Set(state.users.map((item) => item.id));
   const companyIds = new Set(state.companies.map((item) => item.id));
-  const establishmentIds = new Set(
-    state.companies.flatMap((company) => company.establishments.map((item) => item.id)),
-  );
+  const establishmentIds = new Set(state.companies.flatMap((company) => company.establishments.map((item) => item.id)));
   const seatCountIds = new Set(
     state.companies.flatMap((company) =>
       company.establishments.flatMap((establishment) =>
@@ -1370,46 +1438,135 @@ function getEstablishmentLabel(establishmentId) {
   return establishment ? `${establishment.companyName} | ${establishment.name}` : "";
 }
 
-function syncWidgetSelections() {
+function syncWidgetSetupSelections() {
   const companies = state.widgetCatalog;
   if (!companies.length) {
-    state.widget = {
-      companyId: "",
-      establishmentId: "",
-      seatCountId: "",
-      selectedDate: "",
-      selectedTime: "",
-    };
+    state.widgetSetup = { companyId: "", establishmentId: "", seatCountId: "" };
     return;
   }
 
-  if (!companies.some((company) => company.id === state.widget.companyId)) {
-    state.widget.companyId = companies[0].id;
+  if (!companies.some((company) => company.id === state.widgetSetup.companyId)) {
+    state.widgetSetup.companyId = companies[0].id;
   }
 
-  const establishments = getWidgetEstablishments();
-  if (!establishments.some((establishment) => establishment.id === state.widget.establishmentId)) {
-    state.widget.establishmentId = establishments[0]?.id ?? "";
+  const establishments = getWidgetSetupEstablishments();
+  if (!establishments.some((establishment) => establishment.id === state.widgetSetup.establishmentId)) {
+    state.widgetSetup.establishmentId = establishments[0]?.id ?? "";
   }
 
-  const seatCounts = getWidgetSeatCounts();
-  if (!seatCounts.some((seatCount) => seatCount.id === state.widget.seatCountId)) {
-    state.widget.seatCountId = seatCounts[0]?.id ?? "";
-    state.widget.selectedDate = "";
-    state.widget.selectedTime = "";
+  const seatCounts = getWidgetSetupSeatCounts();
+  if (!seatCounts.some((seatCount) => seatCount.id === state.widgetSetup.seatCountId)) {
+    state.widgetSetup.seatCountId = seatCounts[0]?.id ?? "";
   }
 }
 
-function getWidgetEstablishments() {
-  const company = state.widgetCatalog.find((item) => item.id === state.widget.companyId);
+function syncWidgetFromLocation() {
+  const params = new URLSearchParams(location.search);
+  const seatCountId = params.get("seatCountId") ?? "";
+
+  if (location.pathname === "/widget") {
+    state.widget.seatCountId = seatCountId;
+    const seatCount = getSeatCountById(seatCountId);
+    if (seatCount) {
+      state.widget.currentMonth = monthKey(todayString());
+      refreshWidgetAvailability().then(render);
+    } else {
+      state.widgetAvailability = [];
+      state.widget.selectedDate = "";
+      state.widget.selectedTime = "";
+    }
+  }
+}
+
+function getWidgetSetupEstablishments() {
+  const company = state.widgetCatalog.find((item) => item.id === state.widgetSetup.companyId);
   return company?.establishments ?? [];
 }
 
-function getWidgetSeatCounts() {
-  const establishment = getWidgetEstablishments().find(
-    (item) => item.id === state.widget.establishmentId,
+function getWidgetSetupSeatCounts() {
+  const establishment = getWidgetSetupEstablishments().find(
+    (item) => item.id === state.widgetSetup.establishmentId,
   );
-  return establishment?.seatCounts ?? [];
+  return (establishment?.seatCounts ?? []).map((seatCount) => ({
+    ...seatCount,
+    label: `${seatCount.seatCount} seats`,
+  }));
+}
+
+function getWidgetUrl() {
+  const origin = location.origin;
+  return `${origin}/widget?seatCountId=${encodeURIComponent(state.widgetSetup.seatCountId)}`;
+}
+
+function getSelectedSeatCountLabel() {
+  return getWidgetSetupSeatCounts().find((seatCount) => seatCount.id === state.widgetSetup.seatCountId)?.label ?? "";
+}
+
+function getSelectedEstablishmentLabel() {
+  return getWidgetSetupEstablishments().find(
+    (establishment) => establishment.id === state.widgetSetup.establishmentId,
+  )?.name;
+}
+
+function getSeatCountById(seatCountId) {
+  for (const company of state.widgetCatalog) {
+    for (const establishment of company.establishments) {
+      for (const seatCount of establishment.seatCounts) {
+        if (seatCount.id === seatCountId) {
+          return {
+            ...seatCount,
+            label: `${seatCount.seatCount} seats`,
+            companyName: company.name,
+            establishmentName: establishment.name,
+            establishmentLabel: `${company.name} | ${establishment.name}`,
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function getSelectedWidgetSeatCount() {
+  return getSeatCountById(state.widget.seatCountId);
+}
+
+function monthKey(dateString) {
+  return dateString.slice(0, 7);
+}
+
+function parseMonthKey(key) {
+  const [year, month] = key.split("-").map(Number);
+  return { year, monthIndex: month - 1 };
+}
+
+function monthStartDate(key) {
+  return `${key}-01`;
+}
+
+function daysInMonth(key) {
+  const { year, monthIndex } = parseMonthKey(key);
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function shiftMonth(key, delta) {
+  const { year, monthIndex } = parseMonthKey(key);
+  const shifted = new Date(Date.UTC(year, monthIndex + delta, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(key) {
+  const { year, monthIndex } = parseMonthKey(key);
+  return new Intl.DateTimeFormat("en-AU", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, monthIndex, 1)));
+}
+
+function toDateString(year, monthIndex, day) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function todayString() {
