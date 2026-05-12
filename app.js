@@ -139,7 +139,7 @@ function renderLoginPage() {
 }
 
 function renderSettingsPage() {
-  const hasUsers = state.users.length > 0;
+  const hasUsers = state.userCount > 0;
   const isAdmin = state.session?.authLevel === "admin";
 
   if (!hasUsers) {
