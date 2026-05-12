@@ -128,9 +128,24 @@ button[type="submit"],
   grid-column: span 5;
 }
 
+.panel.full-width {
+  grid-column: span 12;
+}
+
+.panel.admin-panel {
+  grid-column: span 6;
+}
+
 .stack {
   display: grid;
   gap: 14px;
+}
+
+.stack-inline {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .form-grid {
@@ -164,6 +179,13 @@ select {
   font: inherit;
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .status {
   min-height: 24px;
   color: var(--muted);
@@ -192,20 +214,70 @@ select {
   font-size: 0.94rem;
 }
 
-.users {
+.users,
+.company-list {
   display: grid;
   gap: 12px;
 }
 
-.user-card {
+.panel-head,
+.entity-row {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
+  gap: 16px;
+  align-items: start;
+}
+
+.list-toolbar {
+  display: flex;
+  gap: 12px;
   align-items: center;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.list-toolbar input {
+  flex: 1 1 260px;
+}
+
+.list-header {
+  margin-top: 10px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.compact-checkbox {
+  gap: 6px;
+}
+
+.entity-card,
+.company-card,
+.nested-card {
+  display: flex;
+  gap: 14px;
   padding: 16px 18px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.62);
   border: 1px solid rgba(29, 42, 36, 0.08);
+}
+
+.company-card,
+.nested-card {
+  flex-direction: column;
+}
+
+.entity-select {
+  padding-top: 4px;
+}
+
+.entity-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .badge {
@@ -217,6 +289,52 @@ select {
   color: var(--accent-dark);
   text-transform: capitalize;
   font-size: 0.88rem;
+}
+
+.chip-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(29, 42, 36, 0.08);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.chip-action {
+  padding-right: 8px;
+}
+
+.mini-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.mini-button:hover {
+  text-decoration: underline;
+}
+
+.subsection {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.identity-card {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
 }
 
 .empty {
@@ -233,11 +351,19 @@ select {
   }
 
   .panel.wide,
-  .panel.side {
+  .panel.side,
+  .panel.admin-panel {
     grid-column: span 12;
   }
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .panel-head,
+  .entity-row,
+  .list-toolbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
