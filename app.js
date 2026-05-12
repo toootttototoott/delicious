@@ -1063,10 +1063,10 @@ function renderWidgetCalendar() {
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : availability.remaining === availability.capacity
+        : availability.minRemaining === availability.capacity
           ? `${availability.capacity} seats`
-          : availability.remaining > 0
-            ? `${availability.remaining}/${availability.capacity} left`
+          : availability.minRemaining > 0
+            ? `${availability.minRemaining}-${availability.capacity} seats`
             : "Full";
     cells.push(`
       <button
@@ -1119,9 +1119,11 @@ function renderAdminCalendar() {
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : availability.remaining === availability.capacity
+        : availability.minRemaining === availability.capacity
           ? `${availability.capacity} seats`
-          : `${availability.remaining}/${availability.capacity} left`;
+          : availability.minRemaining > 0
+            ? `${availability.minRemaining}-${availability.capacity} seats`
+            : "Full";
 
     cells.push(`
       <button
@@ -1354,11 +1356,13 @@ function renderAdminSlot(slot) {
 
 async function handleAction(action, dataset) {
   if (action === "logout") {
+    setStatus("auth", "info", "Signing out...");
     await logout();
     return;
   }
 
   if (action === "previousWidgetMonth") {
+    setStatus("widget", "info", "Loading availability...");
     state.widget.currentMonth = shiftMonth(state.widget.currentMonth, -1);
     await refreshWidgetAvailability();
     render();
@@ -1366,6 +1370,7 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "nextWidgetMonth") {
+    setStatus("widget", "info", "Loading availability...");
     state.widget.currentMonth = shiftMonth(state.widget.currentMonth, 1);
     await refreshWidgetAvailability();
     render();
@@ -1400,6 +1405,7 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "previousAdminMonth") {
+    setStatus("bookings", "info", "Loading booking calendar...");
     state.adminCalendar.currentMonth = shiftMonth(state.adminCalendar.currentMonth, -1);
     await refreshAdminAvailability();
     render();
@@ -1407,6 +1413,7 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "nextAdminMonth") {
+    setStatus("bookings", "info", "Loading booking calendar...");
     state.adminCalendar.currentMonth = shiftMonth(state.adminCalendar.currentMonth, 1);
     await refreshAdminAvailability();
     render();
@@ -1454,6 +1461,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("bookings", "info", "Deleting booking...");
     await postJson("/api/bookings", { action: "delete", bookingId: dataset.bookingId }, "bookings");
     state.adminCalendar.editingBookingId = "";
     await refreshAdminAvailability();
@@ -1536,6 +1544,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("users", "info", "Deleting selected users...");
     await postJson("/api/users", { action: "bulkDelete", userIds: Array.from(state.selectedUserIds) }, "users");
     state.selectedUserIds.clear();
     await refreshAdminState();
@@ -1564,6 +1573,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting company...");
     await postJson("/api/companies", { action: "deleteCompany", companyId: dataset.companyId }, "companies");
     state.selectedCompanyIds.delete(dataset.companyId);
     await refreshAdminState();
@@ -1576,6 +1586,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting selected companies...");
     await postJson("/api/companies", { action: "bulkDeleteCompanies", companyIds: Array.from(state.selectedCompanyIds) }, "companies");
     state.selectedCompanyIds.clear();
     await refreshAdminState();
@@ -1588,6 +1599,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting selected establishments...");
     await postJson("/api/companies", { action: "bulkDeleteEstablishments", establishmentIds: Array.from(state.selectedEstablishmentIds) }, "companies");
     state.selectedEstablishmentIds.clear();
     await refreshAdminState();
@@ -1600,6 +1612,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting selected seat counts...");
     await postJson("/api/companies", { action: "bulkDeleteSeatCounts", seatCountIds: Array.from(state.selectedSeatCountIds) }, "companies");
     state.selectedSeatCountIds.clear();
     await refreshAdminState();
@@ -1613,6 +1626,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Creating establishment...");
     await postJson("/api/companies", { action: "createEstablishment", companyId: dataset.companyId, name }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Establishment created.");
@@ -1621,6 +1635,7 @@ async function handleAction(action, dataset) {
 
   if (action === "saveOpeningHours") {
     const openingHours = collectOpeningHours(dataset.establishmentId);
+    setStatus("companies", "info", "Saving opening hours...");
     await postJson(
       "/api/companies",
       { action: "updateOpeningHours", establishmentId: dataset.establishmentId, openingHours },
@@ -1643,6 +1658,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Saving establishment...");
     await postJson("/api/companies", { action: "updateEstablishment", establishmentId: dataset.establishmentId, companyId: dataset.companyId, name }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Establishment updated.");
@@ -1654,6 +1670,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting establishment...");
     await postJson("/api/companies", { action: "deleteEstablishment", establishmentId: dataset.establishmentId }, "companies");
     state.selectedEstablishmentIds.delete(dataset.establishmentId);
     await refreshAdminState();
@@ -1667,6 +1684,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Creating seat-count calendar...");
     await postJson("/api/companies", { action: "createSeatCount", establishmentId: dataset.establishmentId, seatCount }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Seat-count calendar created.");
@@ -1679,6 +1697,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Saving seat count...");
     await postJson("/api/companies", { action: "updateSeatCount", seatCountId: dataset.seatCountId, establishmentId: dataset.establishmentId, seatCount }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Seat count updated.");
@@ -1690,6 +1709,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
+    setStatus("companies", "info", "Deleting seat count...");
     await postJson("/api/companies", { action: "deleteSeatCount", seatCountId: dataset.seatCountId }, "companies");
     state.selectedSeatCountIds.delete(dataset.seatCountId);
     await refreshAdminState();
@@ -1698,30 +1718,48 @@ async function handleAction(action, dataset) {
 }
 
 async function handleLogin(form) {
-  clearStatus("auth");
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "success", "Signing in...");
+  setSubmitPending(form, true, "Signing in...");
   const payload = Object.fromEntries(new FormData(form).entries());
-  const response = await fetch("/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await readApiResponse(response);
 
-  if (!response.ok) {
-    setStatus("auth", "error", data.error ?? "Unable to sign in.");
-    return;
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await readApiResponse(response);
+
+    if (!response.ok) {
+      setInlineFormStatus(form, "error", data.error ?? "Unable to sign in.");
+      setSubmitPending(form, false, "Sign in");
+      form.dataset.pending = "false";
+      return;
+    }
+
+    state.session = data.session;
+    state.userCount = Math.max(Number(state.userCount ?? 0), 1);
+    clearStatus("auth");
+
+    if (state.session?.authLevel === "admin") {
+      navigate("/settings");
+    } else {
+      render();
+    }
+
+    refreshAdminState().catch(() => {
+      setStatus("auth", "error", "Signed in, but account data could not be refreshed.");
+    });
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Unable to sign in.");
+    setSubmitPending(form, false, "Sign in");
+    form.dataset.pending = "false";
   }
-
-  state.session = data.session;
-  await refreshAdminState();
-  setStatus("auth", "success", "Signed in.");
-
-  if (state.session?.authLevel === "admin") {
-    navigate("/settings");
-    return;
-  }
-
-  render();
 }
 
 async function handleUserSubmit(form) {
@@ -1732,6 +1770,7 @@ async function handleUserSubmit(form) {
     payload.userId = state.userForm.userId;
   }
 
+  setStatus("users", "info", state.userForm.mode === "edit" ? "Saving user..." : "Creating user...");
   const data = await postJson("/api/users", payload, "users");
   state.userForm = createEmptyUserForm();
   state.selectedUserIds.clear();
@@ -1749,6 +1788,7 @@ async function handleCompanySubmit(form) {
     payload.companyId = state.companyForm.companyId;
   }
 
+  setStatus("companies", "info", state.companyForm.mode === "edit" ? "Saving company..." : "Creating company...");
   const data = await postJson("/api/companies", payload, "companies");
   state.companyForm = createEmptyCompanyForm();
   state.selectedCompanyIds.clear();
@@ -1766,6 +1806,7 @@ async function handleWidgetBooking(form) {
     return;
   }
 
+  setStatus("widget", "info", "Saving booking...");
   const data = await postJson("/api/widget", payload, "widget");
   form.reset();
   state.widget.selectedTime = "";
@@ -1778,6 +1819,7 @@ async function handleAdminBookingSubmit(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
   payload.action = payload.bookingId ? "update" : "create";
 
+  setStatus("bookings", "info", payload.bookingId ? "Saving booking..." : "Creating booking...");
   const data = await postJson("/api/bookings", payload, "bookings");
   state.adminCalendar.editingBookingId = "";
   await refreshAdminAvailability();
@@ -1829,6 +1871,7 @@ async function refreshWidgetAvailability() {
     return;
   }
 
+  setStatus("widget", "info", "Loading availability...");
   const monthStart = monthStartDate(state.widget.currentMonth);
   const days = daysInMonth(state.widget.currentMonth);
   const response = await fetch(
@@ -1844,6 +1887,7 @@ async function refreshWidgetAvailability() {
   }
 
   state.widgetAvailability = data.dates ?? [];
+  clearStatus("widget");
   if (!state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)) {
     state.widget.selectedDate = state.widgetAvailability[0]?.date ?? "";
     state.widget.selectedTime = "";
@@ -1869,6 +1913,7 @@ async function refreshAdminAvailability() {
     return;
   }
 
+  setStatus("bookings", "info", "Loading booking calendar...");
   const monthStart = monthStartDate(state.adminCalendar.currentMonth);
   const days = daysInMonth(state.adminCalendar.currentMonth);
   const response = await fetch(
@@ -1883,6 +1928,7 @@ async function refreshAdminAvailability() {
   }
 
   state.adminAvailability = data.dates ?? [];
+  clearStatus("bookings");
   if (!state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate)) {
     state.adminCalendar.selectedDate = "";
     state.adminCalendar.selectedTime = "";
@@ -1952,6 +1998,26 @@ function clearStatus(scope) {
 function renderStatus(scope) {
   const status = state.statuses[scope];
   return `<div class="status ${status?.kind ?? ""}">${escapeHtml(status?.message ?? "")}</div>`;
+}
+
+function setInlineFormStatus(form, kind, message) {
+  const status = form.querySelector(".status");
+  if (!status) {
+    return;
+  }
+
+  status.className = `status ${kind ?? ""}`.trim();
+  status.textContent = message ?? "";
+}
+
+function setSubmitPending(form, pending, label) {
+  const button = form.querySelector('button[type="submit"]');
+  if (!button) {
+    return;
+  }
+
+  button.disabled = pending;
+  button.textContent = label;
 }
 
 function getFilteredUsers() {

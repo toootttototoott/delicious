@@ -238,6 +238,10 @@ input[type="checkbox"] {
   color: var(--muted);
 }
 
+.status.info {
+  color: var(--muted);
+}
+
 .status.error {
   color: var(--warn);
 }
