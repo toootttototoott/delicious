@@ -32,6 +32,7 @@ const state = {
     currentMonth: monthKey(todayString()),
     selectedDate: "",
     selectedTime: "",
+    modal: null,
   },
 };
 
@@ -44,6 +45,10 @@ const routes = new Map([
 ]);
 
 document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-modal-panel]") && !event.target.closest("[data-action]")) {
+    return;
+  }
+
   const link = event.target.closest("[data-link]");
   if (link) {
     event.preventDefault();
@@ -510,7 +515,7 @@ function renderWidgetPage() {
 
   return `
     <section class="layout widget-layout">
-      <article class="panel wide widget-calendar-panel">
+      <article class="panel full-width widget-calendar-panel">
         <p class="eyebrow">Booking widget</p>
         <h2>${escapeHtml(seatCountLabel)}</h2>
         <p class="meta">${escapeHtml(establishmentLabel)}</p>
@@ -518,41 +523,7 @@ function renderWidgetPage() {
         ${renderCalendarNavigator()}
         ${renderWidgetCalendar()}
       </article>
-      <aside class="panel side">
-        <p class="eyebrow">Booking details</p>
-        <h3>${state.widget.selectedDate ? escapeHtml(state.widget.selectedDate) : "Choose a day"}</h3>
-        <div class="times-grid">
-          ${renderWidgetTimes(activeDate)}
-        </div>
-        <form class="stack widget-form" data-widget-form>
-          <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
-          <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
-          <input type="hidden" name="bookingTime" value="${escapeHtml(state.widget.selectedTime)}" />
-          <div class="form-grid">
-            <div class="field">
-              <label for="booking-first-name">First name</label>
-              <input id="booking-first-name" name="firstName" required />
-            </div>
-            <div class="field">
-              <label for="booking-last-name">Last name</label>
-              <input id="booking-last-name" name="lastName" required />
-            </div>
-            <div class="field full">
-              <label for="booking-email">Email</label>
-              <input id="booking-email" name="email" type="email" required />
-            </div>
-            <div class="field full">
-              <label for="booking-phone">Phone</label>
-              <input id="booking-phone" name="phone" required />
-            </div>
-            <div class="field full">
-              <label for="booking-notes">Notes</label>
-              <input id="booking-notes" name="notes" />
-            </div>
-          </div>
-          <button type="submit" ${state.widget.selectedTime ? "" : "disabled"}>Book selected slot</button>
-        </form>
-      </aside>
+      ${renderWidgetModal(activeDate)}
     </section>
   `;
 }
@@ -868,6 +839,8 @@ function renderWidgetCalendar() {
     const availability = availabilityByDate.get(date);
     const availableCount = availability?.slots.filter((slot) => slot.available).length ?? 0;
     const isSelected = state.widget.selectedDate === date;
+    const caption =
+      availability == null ? "Check" : availableCount ? `${availableCount} free` : "Full";
     cells.push(`
       <button
         type="button"
@@ -876,7 +849,7 @@ function renderWidgetCalendar() {
         data-date="${date}"
       >
         <span class="calendar-number">${day}</span>
-        <span class="calendar-caption">${availableCount ? `${availableCount} free` : "Full"}</span>
+        <span class="calendar-caption">${caption}</span>
       </button>
     `);
   }
@@ -887,6 +860,69 @@ function renderWidgetCalendar() {
       <div class="calendar-month-grid">${cells.join("")}</div>
     </div>
   `;
+}
+
+function renderWidgetModal(activeDate) {
+  if (state.widget.modal === "time" && activeDate) {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeWidgetModal">
+        <div class="widget-modal" data-modal-panel>
+          <p class="eyebrow">Choose a time</p>
+          <h3>${escapeHtml(state.widget.selectedDate)}</h3>
+          <div class="times-grid">
+            ${renderWidgetTimes(activeDate)}
+          </div>
+          <div class="stack-inline">
+            <button type="button" class="ghost-button" data-action="closeWidgetModal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.widget.modal === "details") {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeWidgetModal">
+        <div class="widget-modal" data-modal-panel>
+          <p class="eyebrow">Booking details</p>
+          <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(state.widget.selectedTime)}</h3>
+          <form class="stack widget-form" data-widget-form>
+            <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
+            <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
+            <input type="hidden" name="bookingTime" value="${escapeHtml(state.widget.selectedTime)}" />
+            <div class="form-grid">
+              <div class="field">
+                <label for="booking-first-name">First name</label>
+                <input id="booking-first-name" name="firstName" required />
+              </div>
+              <div class="field">
+                <label for="booking-last-name">Last name</label>
+                <input id="booking-last-name" name="lastName" required />
+              </div>
+              <div class="field full">
+                <label for="booking-email">Email</label>
+                <input id="booking-email" name="email" type="email" required />
+              </div>
+              <div class="field full">
+                <label for="booking-phone">Phone</label>
+                <input id="booking-phone" name="phone" required />
+              </div>
+              <div class="field full">
+                <label for="booking-notes">Notes</label>
+                <input id="booking-notes" name="notes" />
+              </div>
+            </div>
+            <div class="stack-inline">
+              <button type="submit">Book selected slot</button>
+              <button type="button" class="ghost-button" data-action="backToTimeModal">Back</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  return "";
 }
 
 function renderWidgetTimes(activeDate) {
@@ -934,12 +970,26 @@ async function handleAction(action, dataset) {
   if (action === "selectWidgetDate") {
     state.widget.selectedDate = dataset.date;
     state.widget.selectedTime = "";
+     state.widget.modal = "time";
     render();
     return;
   }
 
   if (action === "selectWidgetTime") {
     state.widget.selectedTime = dataset.time;
+    state.widget.modal = "details";
+    render();
+    return;
+  }
+
+  if (action === "closeWidgetModal") {
+    state.widget.modal = null;
+    render();
+    return;
+  }
+
+  if (action === "backToTimeModal") {
+    state.widget.modal = "time";
     render();
     return;
   }
@@ -1222,6 +1272,7 @@ async function handleWidgetBooking(form) {
   const data = await postJson("/api/widget", payload, "widget");
   form.reset();
   state.widget.selectedTime = "";
+  state.widget.modal = null;
   await refreshWidgetAvailability();
   setStatus("widget", "success", data.message ?? "Booking confirmed.");
 }
@@ -1253,6 +1304,7 @@ async function refreshWidgetAvailability() {
     state.widgetAvailability = [];
     state.widget.selectedDate = "";
     state.widget.selectedTime = "";
+    state.widget.modal = null;
     return;
   }
 
@@ -1265,6 +1317,7 @@ async function refreshWidgetAvailability() {
 
   if (!response.ok) {
     state.widgetAvailability = [];
+    state.widget.modal = null;
     setStatus("widget", "error", data.error ?? "Availability could not be loaded.");
     return;
   }
@@ -1273,11 +1326,15 @@ async function refreshWidgetAvailability() {
   if (!state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)) {
     state.widget.selectedDate = state.widgetAvailability[0]?.date ?? "";
     state.widget.selectedTime = "";
+    state.widget.modal = null;
   }
 
   const selectedDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate);
   if (selectedDate && !selectedDate.slots.some((slot) => slot.time === state.widget.selectedTime && slot.available)) {
     state.widget.selectedTime = "";
+    if (state.widget.modal === "details") {
+      state.widget.modal = "time";
+    }
   }
 }
 
@@ -1486,11 +1543,12 @@ function syncWidgetFromLocation() {
       }
       refreshWidgetAvailability().then(render);
     } else {
-      state.widgetAvailability = [];
-      state.widget.selectedDate = "";
-      state.widget.selectedTime = "";
-    }
+    state.widgetAvailability = [];
+    state.widget.selectedDate = "";
+    state.widget.selectedTime = "";
+    state.widget.modal = null;
   }
+}
 }
 
 function getWidgetSetupEstablishments() {
