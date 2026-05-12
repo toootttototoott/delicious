@@ -1059,21 +1059,31 @@ function renderWidgetCalendar() {
         ? "has-availability"
         : "is-full"
       : "is-closed";
+    const seatLoad = !availability?.isOpen
+      ? 0
+      : availability.capacity > 0
+        ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
+        : 0;
     const caption = !availability
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : availability.minRemaining === availability.capacity
-          ? `${availability.capacity} seats`
-          : availability.minRemaining > 0
-            ? `${availability.minRemaining}-${availability.capacity} seats`
-            : "Full";
+        : seatLoad === 0
+          ? "Open"
+          : seatLoad < 0.35
+            ? "Filling"
+            : seatLoad < 0.75
+              ? "Busy"
+              : seatLoad < 1
+                ? "Nearly full"
+                : "Full";
     cells.push(`
       <button
         type="button"
         class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
         data-action="selectWidgetDate"
         data-date="${date}"
+        style="--seat-load:${seatLoad.toFixed(3)}"
         ${availability?.isOpen ? "" : "disabled"}
       >
         <span class="calendar-number">${day}</span>
@@ -1115,15 +1125,24 @@ function renderAdminCalendar() {
         ? "has-availability"
         : "is-full"
       : "is-closed";
+    const seatLoad = !availability?.isOpen
+      ? 0
+      : availability.capacity > 0
+        ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
+        : 0;
     const caption = !availability
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : availability.minRemaining === availability.capacity
-          ? `${availability.capacity} seats`
-          : availability.minRemaining > 0
-            ? `${availability.minRemaining}-${availability.capacity} seats`
-            : "Full";
+        : seatLoad === 0
+          ? "Open"
+          : seatLoad < 0.35
+            ? "Filling"
+            : seatLoad < 0.75
+              ? "Busy"
+              : seatLoad < 1
+                ? "Nearly full"
+                : "Full";
 
     cells.push(`
       <button
@@ -1131,6 +1150,7 @@ function renderAdminCalendar() {
         class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
         data-action="selectAdminDate"
         data-date="${date}"
+        style="--seat-load:${seatLoad.toFixed(3)}"
       >
         <span class="calendar-number">${day}</span>
         <span class="calendar-caption">${caption}</span>
@@ -1219,19 +1239,22 @@ function renderWidgetTimes(activeDate) {
   }
 
   return activeDate.slots
-    .map(
-          (slot) => `
+    .map((slot) => {
+      const seatLoad =
+        slot.capacity > 0 ? 1 - (slot.remaining ?? slot.capacity) / slot.capacity : 0;
+      return `
         <button
           type="button"
           class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
           data-action="selectWidgetTime"
           data-time="${slot.time}"
+          style="--seat-load:${seatLoad.toFixed(3)}"
           ${slot.available ? "" : "disabled"}
         >
-          ${slot.time} · ${slot.remaining} left
+          ${slot.time}
         </button>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
