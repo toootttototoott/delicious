@@ -1136,22 +1136,23 @@ function renderWidgetCalendar() {
         ? "has-availability"
         : "is-full"
       : "is-closed";
-    const seatLoad = !availability?.isOpen
+    const rawSeatLoad = !availability?.isOpen
       ? 0
       : availability.capacity > 0
         ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
         : 0;
+    const seatLoad = curveSeatLoad(rawSeatLoad);
     const caption = !availability
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : seatLoad === 0
+        : rawSeatLoad === 0
           ? "Open"
-          : seatLoad < 0.35
+          : rawSeatLoad < 0.35
             ? "Filling"
-            : seatLoad < 0.75
+            : rawSeatLoad < 0.75
               ? "Busy"
-              : seatLoad < 1
+              : rawSeatLoad < 1
                 ? "Nearly full"
                 : "Full";
     cells.push(`
@@ -1202,22 +1203,23 @@ function renderAdminCalendar() {
         ? "has-availability"
         : "is-full"
       : "is-closed";
-    const seatLoad = !availability?.isOpen
+    const rawSeatLoad = !availability?.isOpen
       ? 0
       : availability.capacity > 0
         ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
         : 0;
+    const seatLoad = curveSeatLoad(rawSeatLoad);
     const caption = !availability
       ? "Check"
       : !availability.isOpen
         ? "Closed"
-        : seatLoad === 0
+        : rawSeatLoad === 0
           ? "Open"
-          : seatLoad < 0.35
+          : rawSeatLoad < 0.35
             ? "Filling"
-            : seatLoad < 0.75
+            : rawSeatLoad < 0.75
               ? "Busy"
-              : seatLoad < 1
+              : rawSeatLoad < 1
                 ? "Nearly full"
                 : "Full";
 
@@ -1317,8 +1319,9 @@ function renderWidgetTimes(activeDate) {
 
   return activeDate.slots
     .map((slot) => {
-      const seatLoad =
+      const rawSeatLoad =
         slot.capacity > 0 ? 1 - (slot.remaining ?? slot.capacity) / slot.capacity : 0;
+      const seatLoad = curveSeatLoad(rawSeatLoad);
       return `
         <button
           type="button"
@@ -2465,6 +2468,11 @@ function todayString() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
   return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10);
+}
+
+function curveSeatLoad(value) {
+  const clamped = Math.max(0, Math.min(1, Number(value) || 0));
+  return Math.sqrt(clamped);
 }
 
 function escapeHtml(value) {
