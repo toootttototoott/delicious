@@ -53,7 +53,7 @@ async function boot() {
 async function loadSession() {
   state.status = null;
   const response = await fetch("/api/session");
-  const payload = await response.json();
+  const payload = await readApiResponse(response);
   state.session = payload.session;
   state.users = payload.users ?? [];
 }
@@ -97,7 +97,7 @@ function renderSessionSummary() {
       <div class="identity">
         Signed in as <strong>${escapeHtml(state.session.firstName)} ${escapeHtml(state.session.lastName)}</strong>
       </div>
-      <p class="meta">${escapeHtml(state.session.email)} · ${escapeHtml(state.session.authLevel)}</p>
+      <p class="meta">${escapeHtml(state.session.email)} | ${escapeHtml(state.session.authLevel)}</p>
       <button type="button" class="ghost-button" data-logout>Sign out</button>
     </div>
   `;
@@ -274,7 +274,7 @@ async function handleLogin(form) {
     body: JSON.stringify(payload),
   });
 
-  const data = await response.json();
+  const data = await readApiResponse(response);
 
   if (!response.ok) {
     setStatus("error", data.error ?? "Unable to sign in.");
@@ -297,7 +297,7 @@ async function handleUserCreate(form) {
     body: JSON.stringify(payload),
   });
 
-  const data = await response.json();
+  const data = await readApiResponse(response);
 
   if (!response.ok) {
     setStatus("error", data.error ?? "Unable to create user.");
@@ -322,10 +322,23 @@ async function logout() {
 
 async function refreshUsers() {
   const response = await fetch("/api/session");
-  const data = await response.json();
+  const data = await readApiResponse(response);
   state.session = data.session;
   state.users = data.users ?? [];
   render();
+}
+
+async function readApiResponse(response) {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  return {
+    error: text || `Request failed with status ${response.status}.`,
+  };
 }
 
 function escapeHtml(value) {
