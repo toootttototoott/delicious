@@ -325,6 +325,20 @@ document.addEventListener("change", async (event) => {
   }
 });
 
+document.addEventListener("paste", async (event) => {
+  if (location.pathname !== "/widget-editor") {
+    return;
+  }
+
+  const files = getClipboardFiles(event.clipboardData);
+  if (!files.length) {
+    return;
+  }
+
+  event.preventDefault();
+  await handleWidgetEditorFiles(files, { append: true, sourceLabel: "pasted" });
+});
+
 async function boot() {
   if (location.pathname === "/") {
     history.replaceState({}, "", "/login");
@@ -2346,16 +2360,20 @@ async function handleWidgetEditorGenerate(form) {
   payload.requestText = state.widgetEditor.prompt;
   payload.attachments = state.widgetEditor.attachments;
 
-  setStatus("widgetEditor", "info", "Generating widget CSS...");
-  const data = await postJson("/api/widget-editor", payload, "widgetEditor");
-  state.widgetEditor.draftCss = data.cssText ?? "";
-  state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
-  state.widgetEditor.model = payload.model ?? state.widgetEditor.model;
-  setStatus(
-    "widgetEditor",
-    "success",
-    data.message ?? `Widget CSS generated${state.widgetEditor.lastGeneratedModel ? ` with ${state.widgetEditor.lastGeneratedModel}` : ""}.`,
-  );
+  try {
+    setStatus("widgetEditor", "info", "Generating widget CSS...");
+    const data = await postJson("/api/widget-editor", payload, "widgetEditor");
+    state.widgetEditor.draftCss = data.cssText ?? "";
+    state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
+    state.widgetEditor.model = payload.model ?? state.widgetEditor.model;
+    setStatus(
+      "widgetEditor",
+      "success",
+      data.message ?? `Widget CSS generated${state.widgetEditor.lastGeneratedModel ? ` with ${state.widgetEditor.lastGeneratedModel}` : ""}.`,
+    );
+  } finally {
+    clearWidgetEditorAttachments();
+  }
 }
 
 async function handleWidgetEditorSave(form) {
@@ -2377,22 +2395,31 @@ async function handleWidgetEditorSave(form) {
   setStatus("widgetEditor", "success", data.message ?? "Widget CSS saved.");
 }
 
-async function handleWidgetEditorFiles(fileList) {
+async function handleWidgetEditorFiles(fileList, options = {}) {
+  const append = options.append === true;
+  const sourceLabel = options.sourceLabel ?? "uploaded";
+
   if (!fileList?.length) {
-    state.widgetEditor.attachments = [];
-    render();
+    if (!append) {
+      clearWidgetEditorAttachments();
+    }
     return;
   }
 
   const files = Array.from(fileList);
-  const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  const existingApproxBytes = state.widgetEditor.attachments.reduce(
+    (sum, attachment) => sum + approximateDataUrlBytes(attachment.dataUrl),
+    0,
+  );
+  const newBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  const totalBytes = existingApproxBytes + newBytes;
   if (totalBytes > 2_500_000) {
     setStatus("widgetEditor", "error", "Keep uploaded reference files under roughly 2.5 MB total.");
     return;
   }
 
-  setStatus("widgetEditor", "info", "Loading reference files...");
-  state.widgetEditor.attachments = await Promise.all(
+  setStatus("widgetEditor", "info", `Loading ${sourceLabel} reference files...`);
+  const loadedAttachments = await Promise.all(
     files.map(async (file) => ({
       name: file.name,
       mimeType: file.type || "application/octet-stream",
@@ -2400,7 +2427,60 @@ async function handleWidgetEditorFiles(fileList) {
       dataUrl: await readFileAsDataUrl(file),
     })),
   );
-  setStatus("widgetEditor", "success", `${state.widgetEditor.attachments.length} reference file${state.widgetEditor.attachments.length === 1 ? "" : "s"} ready.`);
+  state.widgetEditor.attachments = append
+    ? [...state.widgetEditor.attachments, ...loadedAttachments]
+    : loadedAttachments;
+  setStatus(
+    "widgetEditor",
+    "success",
+    `${state.widgetEditor.attachments.length} reference file${state.widgetEditor.attachments.length === 1 ? "" : "s"} ready.`,
+  );
+}
+
+function clearWidgetEditorAttachments() {
+  state.widgetEditor.attachments = [];
+  const input = document.querySelector("[data-widget-editor-files]");
+  if (input) {
+    input.value = "";
+  }
+}
+
+function getClipboardFiles(clipboardData) {
+  if (!clipboardData?.items?.length) {
+    return [];
+  }
+
+  const files = [];
+  for (const item of Array.from(clipboardData.items)) {
+    if (item.kind !== "file") {
+      continue;
+    }
+
+    const file = item.getAsFile();
+    if (file) {
+      const name = file.name || inferClipboardFileName(file.type);
+      files.push(new File([file], name, { type: file.type || "application/octet-stream" }));
+    }
+  }
+
+  return files;
+}
+
+function inferClipboardFileName(mimeType) {
+  if (mimeType === "image/png") {
+    return `pasted-screenshot-${Date.now()}.png`;
+  }
+
+  if (mimeType === "image/jpeg") {
+    return `pasted-image-${Date.now()}.jpg`;
+  }
+
+  return `pasted-file-${Date.now()}`;
+}
+
+function approximateDataUrlBytes(dataUrl) {
+  const [, base64 = ""] = String(dataUrl ?? "").split(",", 2);
+  return Math.floor((base64.length * 3) / 4);
 }
 
 async function logout() {
