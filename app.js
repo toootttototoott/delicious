@@ -73,10 +73,32 @@ function setStatus(kind, message) {
 }
 
 function render() {
+  if (
+    location.pathname === "/settings" &&
+    state.userCount > 0 &&
+    state.session?.authLevel !== "admin"
+  ) {
+    history.replaceState({}, "", "/login");
+    if (!state.status) {
+      state.status = { kind: "error", message: "Admin access required to open settings." };
+    }
+  }
+
   const app = document.querySelector("#app");
+  const topnav = document.querySelector(".topnav");
   const renderer = routes.get(location.pathname) ?? renderLoginPage;
+  topnav.innerHTML = renderTopnav();
   app.innerHTML = renderer();
   hydrateStatus();
+}
+
+function renderTopnav() {
+  const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
+
+  return `
+    <a href="/login" data-link>Display</a>
+    ${canViewSettings ? '<a href="/settings" data-link>Settings</a>' : ""}
+  `;
 }
 
 function hydrateStatus() {
@@ -165,18 +187,9 @@ function renderSettingsPage() {
       <section class="layout">
         <article class="panel wide">
           <p class="eyebrow">Settings page</p>
-          <h2>Admin login required</h2>
-          <p class="meta">Sign in on the display page with an admin account first.</p>
-          <p class="meta">Users stored: ${state.userCount}</p>
+          <h2>Redirecting to login</h2>
+          <p class="meta">Settings is restricted to admins.</p>
           <a class="button-primary" href="/login" data-link>Go to login</a>
-        </article>
-        <aside class="panel side">
-          <p class="eyebrow">Saved users</p>
-          <h3>Verification</h3>
-          <p class="meta">This preview is visible before login so you can confirm records exist. Emails are masked.</p>
-          <div class="users">
-            ${renderMaskedUsers()}
-          </div>
         </aside>
       </section>
     `;
