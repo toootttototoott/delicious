@@ -45,7 +45,13 @@ const routes = new Map([
 ]);
 
 document.addEventListener("click", (event) => {
-  if (event.target.closest("[data-modal-panel]") && !event.target.closest("[data-action]")) {
+  const modalPanel = event.target.closest("[data-modal-panel]");
+  const actionTarget = event.target.closest("[data-action]");
+
+  if (
+    modalPanel &&
+    (!actionTarget || actionTarget.classList.contains("widget-modal-backdrop"))
+  ) {
     return;
   }
 
@@ -516,9 +522,6 @@ function renderWidgetPage() {
   return `
     <section class="layout widget-layout">
       <article class="panel full-width widget-calendar-panel">
-        <p class="eyebrow">Booking widget</p>
-        <h2>${escapeHtml(seatCountLabel)}</h2>
-        <p class="meta">${escapeHtml(establishmentLabel)}</p>
         ${renderStatus("widget")}
         ${renderCalendarNavigator()}
         ${renderWidgetCalendar()}
