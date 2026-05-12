@@ -10,8 +10,17 @@ import {
 export default async function handler(request, response) {
   await ensureSchema();
   const session = await getSessionUserFromCookieHeader(request.headers.cookie);
-  const users = await listUsersForSession(session);
   const userCount = await countUsers();
-  const maskedUsers = session?.authLevel === "admin" ? [] : await listMaskedUsers();
+  const users = session ? await listUsersForSession(session) : [];
+  let maskedUsers = [];
+
+  if (!session?.authLevel) {
+    try {
+      maskedUsers = await listMaskedUsers();
+    } catch {
+      maskedUsers = [];
+    }
+  }
+
   sendJson(response, 200, { session, users, userCount, maskedUsers });
 }

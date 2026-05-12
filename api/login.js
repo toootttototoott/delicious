@@ -19,7 +19,21 @@ export default async function handler(request, response) {
     return;
   }
 
-  const session = await verifyLogin(email, password);
+  let session;
+
+  try {
+    session = await verifyLogin(email, password);
+  } catch (error) {
+    if (error.code === "DECRYPT_FAILED") {
+      sendJson(response, 500, {
+        error: "Stored user data could not be decrypted. Check ENCRYPT_KEY for this Vercel environment.",
+      });
+      return;
+    }
+
+    throw error;
+  }
+
   if (!session) {
     sendJson(response, 401, { error: "Invalid email or password." });
     return;
