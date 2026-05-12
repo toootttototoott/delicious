@@ -184,6 +184,7 @@ async function loadSession() {
   state.companies = payload.companies ?? [];
   state.userCount = Number(payload.userCount ?? 0);
   pruneSelections();
+  syncWidgetSetupSelections();
 }
 
 async function loadWidgetCatalog() {
