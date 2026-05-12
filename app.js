@@ -280,10 +280,14 @@ function applyRouteChrome() {
   const shell = document.querySelector(".shell");
   const masthead = document.querySelector(".masthead");
   const isWidgetRoute = location.pathname === "/widget";
+  const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
+  const hideChrome = isWidgetRoute || isLoginRoute;
 
   body.classList.toggle("widget-embed", isWidgetRoute);
+  body.classList.toggle("login-standalone", isLoginRoute);
   shell?.classList.toggle("widget-embed-shell", isWidgetRoute);
-  masthead?.classList.toggle("is-hidden", isWidgetRoute);
+  shell?.classList.toggle("login-shell", isLoginRoute);
+  masthead?.classList.toggle("is-hidden", hideChrome);
 }
 
 function needsAdminRedirect(pathname) {
@@ -295,7 +299,7 @@ function needsAdminRedirect(pathname) {
 }
 
 function renderTopnav() {
-  if (location.pathname === "/widget") {
+  if (location.pathname === "/widget" || location.pathname === "/login" || location.pathname === "/") {
     return "";
   }
 
@@ -310,31 +314,31 @@ function renderTopnav() {
 
 function renderLoginPage() {
   return `
-    <section class="layout">
-      <article class="panel wide">
-        <p class="eyebrow">Display page</p>
+    <section class="login-layout">
+      <article class="panel login-panel">
+        <p class="eyebrow">Booking system</p>
         <h2>Sign in</h2>
         <p class="meta">Use an email and password from a user created in settings.</p>
-        <form class="stack" data-login-form>
+        <form class="stack" data-login-form autocomplete="on">
           <div class="form-grid">
             <div class="field full">
               <label for="login-email">Email</label>
-              <input id="login-email" name="email" type="email" autocomplete="username" required />
+              <input id="login-email" name="email" type="email" autocomplete="username" autofocus required />
             </div>
             <div class="field full">
               <label for="login-password">Password</label>
-              <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+              <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go" required />
             </div>
           </div>
           ${renderStatus("auth")}
-          <button type="submit">Sign in</button>
+          <button type="submit" class="login-submit">Sign in</button>
         </form>
       </article>
-      <aside class="panel side">
-        <p class="eyebrow">Current user</p>
-        <h3>Your details</h3>
+      <article class="panel login-side">
+        <p class="eyebrow">Session</p>
+        <h3>${state.session ? "Signed in" : "No active session"}</h3>
         ${renderSessionSummary()}
-      </aside>
+      </article>
     </section>
   `;
 }
@@ -1711,6 +1715,13 @@ async function handleLogin(form) {
   state.session = data.session;
   await refreshAdminState();
   setStatus("auth", "success", "Signed in.");
+
+  if (state.session?.authLevel === "admin") {
+    navigate("/settings");
+    return;
+  }
+
+  render();
 }
 
 async function handleUserSubmit(form) {

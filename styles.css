@@ -32,6 +32,12 @@ body.widget-embed {
   background: transparent;
 }
 
+body.login-standalone {
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
 .shell {
   width: min(1080px, calc(100vw - 32px));
   margin: 0 auto;
@@ -41,6 +47,12 @@ body.widget-embed {
 .shell.widget-embed-shell {
   width: 100%;
   max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shell.login-shell {
+  width: min(880px, 100%);
   margin: 0;
   padding: 0;
 }
@@ -115,6 +127,12 @@ button[type="submit"],
   color: #fff8f0;
 }
 
+.login-submit {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.08rem;
+}
+
 #app {
   display: grid;
   gap: 20px;
@@ -124,6 +142,13 @@ button[type="submit"],
   display: grid;
   gap: 20px;
   grid-template-columns: repeat(12, 1fr);
+}
+
+.login-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
+  align-items: start;
 }
 
 .panel {
@@ -142,6 +167,11 @@ button[type="submit"],
 
 .panel.side {
   grid-column: span 5;
+}
+
+.login-panel,
+.login-side {
+  min-width: 0;
 }
 
 .panel.full-width {
@@ -553,6 +583,10 @@ body.widget-embed .widget-calendar-panel {
 }
 
 @media (max-width: 780px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
   .hours-row {
     grid-template-columns: 1fr 1fr;
   }
