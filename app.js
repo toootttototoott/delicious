@@ -4,6 +4,7 @@ const state = {
   companies: [],
   userCount: 0,
   appSettings: createDefaultAppSettings(),
+  openAiModelDraft: "gpt-5.4-nano",
   widgetCatalog: [],
   widgetAvailability: [],
   statuses: {
@@ -200,6 +201,11 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-openai-model-draft]")) {
+    state.openAiModelDraft = event.target.value;
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-prompt]")) {
     state.widgetEditor.prompt = event.target.value;
     return;
@@ -207,6 +213,11 @@ document.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-widget-editor-css]")) {
     state.widgetEditor.draftCss = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-model]")) {
+    state.widgetEditor.model = event.target.value;
   }
 });
 
@@ -355,6 +366,7 @@ async function loadSession() {
     state.users = [];
     state.companies = [];
     state.appSettings = createDefaultAppSettings();
+    state.openAiModelDraft = state.appSettings.openAiModel;
   }
   pruneSelections();
   syncWidgetSetupSelections();
@@ -373,6 +385,7 @@ async function loadAdminData() {
   state.users = payload.users ?? [];
   state.companies = payload.companies ?? [];
   state.appSettings = payload.appSettings ?? createDefaultAppSettings();
+  state.openAiModelDraft = state.appSettings.openAiModel;
   pruneSelections();
   syncWidgetSetupSelections();
   syncWidgetEditorSelections();
@@ -809,8 +822,8 @@ function renderWidgetEditorPage() {
             </div>
             <div class="field">
               <label for="widget-editor-model">Model</label>
-              <select id="widget-editor-model" name="model">
-                ${renderOpenAiModelOptions(state.appSettings.openAiModel)}
+              <select id="widget-editor-model" name="model" data-widget-editor-model>
+                ${renderOpenAiModelOptions(state.widgetEditor.model)}
               </select>
             </div>
             <div class="field">
@@ -908,7 +921,8 @@ function renderWidgetPage() {
   }
 
   const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
-  const widgetThemeCss = getSelectedWidgetSeatCount()?.widgetThemeCss ?? "";
+  const widgetThemeCss =
+    getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.widgetThemeCss || "";
 
   return `
     ${widgetThemeCss ? `<style>${escapeStyleTagContent(widgetThemeCss)}</style>` : ""}
@@ -960,8 +974,8 @@ function renderOpenAiSettingsForm() {
     <form class="stack" data-openai-settings-form>
       <div class="field">
         <label for="openai-model">Default OpenAI model</label>
-        <select id="openai-model" name="openAiModel">
-          ${renderOpenAiModelOptions(state.appSettings.openAiModel)}
+        <select id="openai-model" name="openAiModel" data-openai-model-draft>
+          ${renderOpenAiModelOptions(state.openAiModelDraft)}
         </select>
       </div>
       <div class="stack-inline">
@@ -1891,7 +1905,13 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "openWidgetEditorPreview") {
-    window.open(dataset.url, "_blank", "noopener,noreferrer");
+    const previewUrl = buildWidgetEditorPreviewUrl();
+    if (!previewUrl) {
+      setStatus("widgetEditor", "error", "Select an establishment with at least one seat-count calendar first.");
+      return;
+    }
+
+    window.open(previewUrl, "_blank", "noopener,noreferrer");
     return;
   }
 
@@ -2276,6 +2296,8 @@ async function handleOpenAiSettingsSubmit(form) {
   setStatus("openaiSettings", "info", "Saving OpenAI model...");
   const data = await postJson("/api/app-settings", payload, "openaiSettings");
   state.appSettings = data.appSettings ?? createDefaultAppSettings();
+  state.openAiModelDraft = state.appSettings.openAiModel;
+  state.widgetEditor.model = state.appSettings.openAiModel;
   setStatus("openaiSettings", "success", data.message ?? "OpenAI model updated.");
 }
 
@@ -2297,6 +2319,7 @@ async function handleWidgetEditorGenerate(form) {
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
   state.widgetEditor.draftCss = data.cssText ?? "";
   state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
+  state.widgetEditor.model = payload.model ?? state.widgetEditor.model;
   setStatus(
     "widgetEditor",
     "success",
@@ -2355,6 +2378,7 @@ async function logout() {
   state.users = [];
   state.companies = [];
   state.appSettings = createDefaultAppSettings();
+  state.openAiModelDraft = state.appSettings.openAiModel;
   state.adminAvailability = [];
   state.selectedUserIds.clear();
   state.selectedCompanyIds.clear();
@@ -2613,6 +2637,7 @@ function createEmptyWidgetEditorState() {
   return {
     companyId: "",
     establishmentId: "",
+    model: "gpt-5.4-nano",
     prompt: "",
     draftCss: "",
     attachments: [],
@@ -2807,6 +2832,9 @@ function syncWidgetEditorSelections() {
   if (!state.widgetEditor.draftCss || state.widgetEditor.establishmentId !== selectedEstablishment?.id) {
     state.widgetEditor.draftCss = savedCss;
   }
+  if (!state.widgetEditor.model) {
+    state.widgetEditor.model = state.appSettings.openAiModel;
+  }
 }
 
 function syncAdminCalendarSelections() {
@@ -2857,6 +2885,35 @@ function syncWidgetFromLocation() {
   state.widget.selectedDate = "";
   state.widget.selectedTime = "";
   state.widget.modal = null;
+}
+
+function getWidgetPreviewCssOverride() {
+  if (location.pathname !== "/widget") {
+    return "";
+  }
+
+  const params = new URLSearchParams(location.search);
+  const token = String(params.get("previewToken") ?? "").trim();
+  if (!token) {
+    return "";
+  }
+
+  try {
+    const raw = localStorage.getItem(token);
+    if (!raw) {
+      return "";
+    }
+
+    const payload = JSON.parse(raw);
+    if (Date.now() - Number(payload.createdAt ?? 0) > 1000 * 60 * 60 * 4) {
+      localStorage.removeItem(token);
+      return "";
+    }
+
+    return String(payload.cssText ?? "");
+  } catch {
+    return "";
+  }
 }
 
 function getWidgetSetupEstablishments() {
@@ -2957,6 +3014,30 @@ function getWidgetEditorPreviewUrl() {
   const establishment = getSelectedWidgetEditorEstablishment();
   const seatCountId = establishment?.seatCounts?.[0]?.id ?? "";
   return seatCountId ? `${location.origin}/widget?seatCountId=${encodeURIComponent(seatCountId)}` : "";
+}
+
+function buildWidgetEditorPreviewUrl() {
+  const baseUrl = getWidgetEditorPreviewUrl();
+  if (!baseUrl) {
+    return "";
+  }
+
+  const token = `widget-preview-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  try {
+    localStorage.setItem(
+      token,
+      JSON.stringify({
+        cssText: state.widgetEditor.draftCss ?? "",
+        createdAt: Date.now(),
+      }),
+    );
+  } catch {
+    return baseUrl;
+  }
+
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${separator}previewToken=${encodeURIComponent(token)}`;
 }
 
 function getAdminSelectedBooking() {
