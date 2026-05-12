@@ -1,3 +1,4 @@
+import { getAppSettings } from "../lib/app-settings.js";
 import { listCompaniesTree } from "../lib/companies.js";
 import { ensureSchema } from "../lib/db.js";
 import { sendJson } from "../lib/http.js";
@@ -12,10 +13,11 @@ export default async function handler(request, response) {
     return;
   }
 
-  const [users, companies] = await Promise.all([
+  const [users, companies, appSettings] = await Promise.all([
     listUsersForSession(session),
     listCompaniesTree(),
+    getAppSettings(),
   ]);
 
-  sendJson(response, 200, { users, companies });
+  sendJson(response, 200, { users, companies, appSettings });
 }

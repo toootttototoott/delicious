@@ -15,6 +15,10 @@
     {
       "source": "/widget-setup",
       "destination": "/index.html"
+    },
+    {
+      "source": "/widget-editor",
+      "destination": "/index.html"
     }
   ]
 }

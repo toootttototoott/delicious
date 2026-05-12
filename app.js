@@ -3,6 +3,7 @@ const state = {
   users: [],
   companies: [],
   userCount: 0,
+  appSettings: createDefaultAppSettings(),
   widgetCatalog: [],
   widgetAvailability: [],
   statuses: {
@@ -12,6 +13,8 @@ const state = {
     bookings: null,
     widget: null,
     widgetSetup: null,
+    openaiSettings: null,
+    widgetEditor: null,
   },
   filters: {
     users: "",
@@ -28,6 +31,7 @@ const state = {
     establishmentId: "",
     seatCountId: "",
   },
+  widgetEditor: createEmptyWidgetEditorState(),
   widget: {
     seatCountId: "",
     currentMonth: monthKey(todayString()),
@@ -54,6 +58,7 @@ const routes = new Map([
   ["/settings", renderSettingsPage],
   ["/widget", renderWidgetPage],
   ["/widget-setup", renderWidgetSetupPage],
+  ["/widget-editor", renderWidgetEditorPage],
 ]);
 
 let widgetLiveRefreshHandle = null;
@@ -96,7 +101,9 @@ window.addEventListener("popstate", () => {
   }
 
   if (
-    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    (location.pathname === "/settings" ||
+      location.pathname === "/widget-setup" ||
+      location.pathname === "/widget-editor") &&
     state.session?.authLevel === "admin" &&
     !state.companies.length
   ) {
@@ -159,6 +166,24 @@ document.addEventListener("submit", async (event) => {
   if (event.target.matches("[data-admin-booking-form]")) {
     event.preventDefault();
     await handleAdminBookingSubmit(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-openai-settings-form]")) {
+    event.preventDefault();
+    await handleOpenAiSettingsSubmit(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-generate-form]")) {
+    event.preventDefault();
+    await handleWidgetEditorGenerate(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-save-form]")) {
+    event.preventDefault();
+    await handleWidgetEditorSave(event.target);
   }
 });
 
@@ -172,6 +197,16 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-company-search]")) {
     state.filters.companies = event.target.value;
     render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-prompt]")) {
+    state.widgetEditor.prompt = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-css]")) {
+    state.widgetEditor.draftCss = event.target.value;
   }
 });
 
@@ -232,6 +267,27 @@ document.addEventListener("change", async (event) => {
     return;
   }
 
+  if (event.target.matches("[data-widget-editor-company]")) {
+    state.widgetEditor.companyId = event.target.value;
+    state.widgetEditor.draftCss = "";
+    syncWidgetEditorSelections();
+    render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-establishment]")) {
+    state.widgetEditor.establishmentId = event.target.value;
+    state.widgetEditor.draftCss = "";
+    syncWidgetEditorSelections();
+    render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-files]")) {
+    await handleWidgetEditorFiles(event.target.files);
+    return;
+  }
+
   if (event.target.matches("[data-booking-company]")) {
     state.adminCalendar.companyId = event.target.value;
     syncAdminCalendarSelections();
@@ -271,7 +327,9 @@ async function boot() {
   }
 
   if (
-    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    (location.pathname === "/settings" ||
+      location.pathname === "/widget-setup" ||
+      location.pathname === "/widget-editor") &&
     state.session?.authLevel === "admin"
   ) {
     const adminResult = await Promise.allSettled([loadAdminData()]);
@@ -296,9 +354,11 @@ async function loadSession() {
   if (state.session?.authLevel !== "admin") {
     state.users = [];
     state.companies = [];
+    state.appSettings = createDefaultAppSettings();
   }
   pruneSelections();
   syncWidgetSetupSelections();
+  syncWidgetEditorSelections();
   syncAdminCalendarSelections();
 }
 
@@ -312,8 +372,10 @@ async function loadAdminData() {
 
   state.users = payload.users ?? [];
   state.companies = payload.companies ?? [];
+  state.appSettings = payload.appSettings ?? createDefaultAppSettings();
   pruneSelections();
   syncWidgetSetupSelections();
+  syncWidgetEditorSelections();
   syncAdminCalendarSelections();
 }
 
@@ -343,7 +405,9 @@ function navigate(target) {
   }
 
   if (
-    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    (location.pathname === "/settings" ||
+      location.pathname === "/widget-setup" ||
+      location.pathname === "/widget-editor") &&
     state.session?.authLevel === "admin" &&
     !state.companies.length
   ) {
@@ -365,7 +429,11 @@ function render() {
   applyRouteChrome();
   syncLiveRefresh();
 
-  if (needsAdminRedirect("/settings") || needsAdminRedirect("/widget-setup")) {
+  if (
+    needsAdminRedirect("/settings") ||
+    needsAdminRedirect("/widget-setup") ||
+    needsAdminRedirect("/widget-editor")
+  ) {
     history.replaceState({}, "", "/login");
     if (!state.statuses.auth) {
       state.statuses.auth = { kind: "error", message: "Admin access required." };
@@ -411,6 +479,7 @@ function renderTopnav() {
     <a href="/login" data-link>Display</a>
     <a href="/widget${state.widget.seatCountId ? `?seatCountId=${encodeURIComponent(state.widget.seatCountId)}` : ""}" data-link>Widget View</a>
     ${canViewSettings ? '<a href="/widget-setup" data-link>Widget Setup</a>' : ""}
+    ${canViewSettings ? '<a href="/widget-editor" data-link>Widget Editor</a>' : ""}
     ${canViewSettings ? '<a href="/settings" data-link>Settings</a>' : ""}
   `;
 }
@@ -489,12 +558,23 @@ function renderSettingsPage() {
           <div>
             <p class="eyebrow">Admin session</p>
             <h2>Settings</h2>
-            <p class="meta">Manage users, companies, establishments, seat-count calendars, and role assignments.</p>
+            <p class="meta">Manage users, companies, establishments, seat-count calendars, role assignments, and the default OpenAI model.</p>
           </div>
           <div class="stack-inline">
             ${renderSessionSummary(true)}
           </div>
         </div>
+      </article>
+      <article class="panel admin-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">AI settings</p>
+            <h3>Widget editor model</h3>
+            <p class="meta">This default model is used by the widget editor when generating establishment-specific CSS.</p>
+          </div>
+        </div>
+        ${renderOpenAiSettingsForm()}
+        ${renderStatus("openaiSettings")}
       </article>
       <article class="panel admin-panel">
         <div class="panel-head">
@@ -678,6 +758,141 @@ function renderWidgetSetupPage() {
   `;
 }
 
+function renderWidgetEditorPage() {
+  const companies = getWidgetEditorCompanies();
+  const establishments = getWidgetEditorEstablishments();
+  const previewUrl = getWidgetEditorPreviewUrl();
+
+  return `
+    <section class="layout">
+      <article class="panel admin-panel">
+        <p class="eyebrow">Widget editor</p>
+        <h2>Generate widget CSS</h2>
+        <p class="meta">Pick a company and establishment, describe the visual direction, attach reference files, and generate CSS for the booking widget.</p>
+        ${
+          !companies.length
+            ? '<div class="empty">Create a company and establishment in settings before using the widget editor.</div>'
+            : ""
+        }
+        <form class="stack" data-widget-editor-generate-form>
+          <input type="hidden" name="widgetKey" value="booking_calendar" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="widget-editor-company">Company</label>
+              <select id="widget-editor-company" data-widget-editor-company name="companyId">
+                ${!companies.length ? '<option value="">No companies yet</option>' : ""}
+                ${companies
+                  .map(
+                    (company) => `
+                      <option value="${company.id}" ${state.widgetEditor.companyId === company.id ? "selected" : ""}>
+                        ${escapeHtml(company.name)}
+                      </option>
+                    `,
+                  )
+                  .join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label for="widget-editor-establishment">Establishment</label>
+              <select id="widget-editor-establishment" data-widget-editor-establishment name="establishmentId">
+                ${!establishments.length ? '<option value="">No establishments yet</option>' : ""}
+                ${establishments
+                  .map(
+                    (establishment) => `
+                      <option value="${establishment.id}" ${state.widgetEditor.establishmentId === establishment.id ? "selected" : ""}>
+                        ${escapeHtml(establishment.name)}
+                      </option>
+                    `,
+                  )
+                  .join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label for="widget-editor-model">Model</label>
+              <select id="widget-editor-model" name="model">
+                ${renderOpenAiModelOptions(state.appSettings.openAiModel)}
+              </select>
+            </div>
+            <div class="field">
+              <label for="widget-editor-files">Reference files</label>
+              <input
+                id="widget-editor-files"
+                type="file"
+                accept=".pdf,.txt,.md,.json,.html,.css,.doc,.docx,.ppt,.pptx,.csv,.png,.jpg,.jpeg,.webp,.gif"
+                multiple
+                data-widget-editor-files
+              />
+            </div>
+            <div class="field full">
+              <label for="widget-editor-prompt">Design request</label>
+              <textarea
+                id="widget-editor-prompt"
+                name="requestText"
+                rows="8"
+                placeholder="Example: Match the restaurant site. Use the uploaded hero image colors, a warmer cream background, sharper card corners, and bolder selected-day states."
+                data-widget-editor-prompt
+              >${escapeHtml(state.widgetEditor.prompt)}</textarea>
+            </div>
+          </div>
+          ${state.widgetEditor.attachments.length ? `
+            <div class="subsection">
+              <p class="eyebrow">Attachments</p>
+              <div class="chip-row">
+                ${state.widgetEditor.attachments
+                  .map(
+                    (attachment, index) => `
+                      <span class="chip">
+                        ${escapeHtml(attachment.name)}
+                        <button
+                          type="button"
+                          class="mini-button"
+                          data-action="removeWidgetEditorAttachment"
+                          data-index="${index}"
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    `,
+                  )
+                  .join("")}
+              </div>
+            </div>
+          ` : ""}
+          <div class="stack-inline">
+            <button type="submit">Generate CSS</button>
+            ${previewUrl ? `<button type="button" class="ghost-button" data-action="openWidgetEditorPreview" data-url="${escapeHtml(previewUrl)}">Open preview</button>` : ""}
+          </div>
+        </form>
+        ${renderStatus("widgetEditor")}
+      </article>
+      <article class="panel admin-panel">
+        <p class="eyebrow">Widget theme</p>
+        <h3>Booking calendar CSS</h3>
+        <p class="meta">This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.</p>
+        <form class="stack" data-widget-editor-save-form>
+          <input type="hidden" name="widgetKey" value="booking_calendar" />
+          <input type="hidden" name="establishmentId" value="${escapeHtml(state.widgetEditor.establishmentId)}" />
+          <div class="field">
+            <label for="widget-editor-css">CSS</label>
+            <textarea
+              id="widget-editor-css"
+              name="cssText"
+              class="code-input"
+              rows="22"
+              placeholder=".widget-theme-root { ... }"
+              data-widget-editor-css
+            >${escapeHtml(state.widgetEditor.draftCss)}</textarea>
+          </div>
+          <div class="stack-inline">
+            <button type="submit">Save CSS</button>
+            <button type="button" class="ghost-button" data-action="resetWidgetCssDraft">Reset to saved</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  `;
+}
+
 function renderWidgetPage() {
   if (!state.widget.seatCountId || !getSelectedWidgetSeatCount()) {
     return `
@@ -693,9 +908,11 @@ function renderWidgetPage() {
   }
 
   const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
+  const widgetThemeCss = getSelectedWidgetSeatCount()?.widgetThemeCss ?? "";
 
   return `
-    <section class="layout widget-layout">
+    ${widgetThemeCss ? `<style>${escapeStyleTagContent(widgetThemeCss)}</style>` : ""}
+    <section class="layout widget-layout widget-theme-root">
       <article class="panel full-width widget-calendar-panel">
         ${renderStatus("widget")}
         ${renderCalendarNavigator()}
@@ -736,6 +953,44 @@ function renderSessionSummary(compact = false) {
       <button type="button" class="ghost-button" data-action="logout">Sign out</button>
     </div>
   `;
+}
+
+function renderOpenAiSettingsForm() {
+  return `
+    <form class="stack" data-openai-settings-form>
+      <div class="field">
+        <label for="openai-model">Default OpenAI model</label>
+        <select id="openai-model" name="openAiModel">
+          ${renderOpenAiModelOptions(state.appSettings.openAiModel)}
+        </select>
+      </div>
+      <div class="stack-inline">
+        <button type="submit">Save model</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderOpenAiModelOptions(selectedModel) {
+  const models = [
+    "gpt-5.4-nano",
+    "gpt-5.4-mini",
+    "gpt-5.4",
+    "gpt-5.5",
+  ];
+  if (selectedModel && !models.includes(selectedModel)) {
+    models.unshift(selectedModel);
+  }
+
+  return models
+    .map(
+      (model) => `
+        <option value="${model}" ${selectedModel === model ? "selected" : ""}>
+          ${escapeHtml(model)}
+        </option>
+      `,
+    )
+    .join("");
 }
 
 function renderUserForm(lockAdminLevel) {
@@ -1635,6 +1890,23 @@ async function handleAction(action, dataset) {
     return;
   }
 
+  if (action === "openWidgetEditorPreview") {
+    window.open(dataset.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  if (action === "removeWidgetEditorAttachment") {
+    state.widgetEditor.attachments.splice(Number(dataset.index), 1);
+    render();
+    return;
+  }
+
+  if (action === "resetWidgetCssDraft") {
+    state.widgetEditor.draftCss = getSelectedWidgetEditorEstablishment()?.widgetTheme?.cssText ?? "";
+    setStatus("widgetEditor", "info", "Draft reset to the last saved CSS.");
+    return;
+  }
+
   if (action === "cancelUserEdit") {
     state.userForm = createEmptyUserForm();
     clearStatus("users");
@@ -1997,11 +2269,92 @@ async function handleAdminBookingSubmit(form) {
   setStatus("bookings", "success", data.message ?? "Booking saved.");
 }
 
+async function handleOpenAiSettingsSubmit(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.action = "updateOpenAiModel";
+
+  setStatus("openaiSettings", "info", "Saving OpenAI model...");
+  const data = await postJson("/api/app-settings", payload, "openaiSettings");
+  state.appSettings = data.appSettings ?? createDefaultAppSettings();
+  setStatus("openaiSettings", "success", data.message ?? "OpenAI model updated.");
+}
+
+async function handleWidgetEditorGenerate(form) {
+  const establishment = getSelectedWidgetEditorEstablishment();
+  if (!establishment) {
+    setStatus("widgetEditor", "error", "Choose an establishment first.");
+    return;
+  }
+
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.action = "generateWidgetCss";
+  payload.establishmentId = state.widgetEditor.establishmentId;
+  payload.currentCss = state.widgetEditor.draftCss;
+  payload.requestText = state.widgetEditor.prompt;
+  payload.attachments = state.widgetEditor.attachments;
+
+  setStatus("widgetEditor", "info", "Generating widget CSS...");
+  const data = await postJson("/api/widget-editor", payload, "widgetEditor");
+  state.widgetEditor.draftCss = data.cssText ?? "";
+  state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
+  setStatus(
+    "widgetEditor",
+    "success",
+    data.message ?? `Widget CSS generated${state.widgetEditor.lastGeneratedModel ? ` with ${state.widgetEditor.lastGeneratedModel}` : ""}.`,
+  );
+}
+
+async function handleWidgetEditorSave(form) {
+  const establishment = getSelectedWidgetEditorEstablishment();
+  if (!establishment) {
+    setStatus("widgetEditor", "error", "Choose an establishment first.");
+    return;
+  }
+
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.action = "saveWidgetCss";
+  payload.establishmentId = state.widgetEditor.establishmentId;
+  payload.cssText = state.widgetEditor.draftCss;
+
+  setStatus("widgetEditor", "info", "Saving widget CSS...");
+  const data = await postJson("/api/widget-editor", payload, "widgetEditor");
+  await refreshAdminState();
+  state.widgetEditor.draftCss = data.theme?.cssText ?? state.widgetEditor.draftCss;
+  setStatus("widgetEditor", "success", data.message ?? "Widget CSS saved.");
+}
+
+async function handleWidgetEditorFiles(fileList) {
+  if (!fileList?.length) {
+    state.widgetEditor.attachments = [];
+    render();
+    return;
+  }
+
+  const files = Array.from(fileList);
+  const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  if (totalBytes > 2_500_000) {
+    setStatus("widgetEditor", "error", "Keep uploaded reference files under roughly 2.5 MB total.");
+    return;
+  }
+
+  setStatus("widgetEditor", "info", "Loading reference files...");
+  state.widgetEditor.attachments = await Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      kind: file.type.startsWith("image/") ? "image" : "file",
+      dataUrl: await readFileAsDataUrl(file),
+    })),
+  );
+  setStatus("widgetEditor", "success", `${state.widgetEditor.attachments.length} reference file${state.widgetEditor.attachments.length === 1 ? "" : "s"} ready.`);
+}
+
 async function logout() {
   await fetch("/api/logout", { method: "POST" });
   state.session = null;
   state.users = [];
   state.companies = [];
+  state.appSettings = createDefaultAppSettings();
   state.adminAvailability = [];
   state.selectedUserIds.clear();
   state.selectedCompanyIds.clear();
@@ -2009,6 +2362,7 @@ async function logout() {
   state.selectedSeatCountIds.clear();
   state.userForm = createEmptyUserForm();
   state.companyForm = createEmptyCompanyForm();
+  state.widgetEditor = createEmptyWidgetEditorState();
   state.adminCalendar.selectedDate = "";
   state.adminCalendar.selectedTime = "";
   state.adminCalendar.modal = null;
@@ -2028,6 +2382,7 @@ async function refreshAdminState() {
     state.companies = [];
     state.adminAvailability = [];
   }
+  syncWidgetEditorSelections();
   syncWidgetFromLocation();
   render();
 }
@@ -2126,11 +2481,13 @@ function syncLiveRefresh() {
     document.visibilityState === "visible" &&
     location.pathname === "/widget" &&
     Boolean(state.widget.seatCountId);
+  const settingsInputActive = isSettingsInputActive();
   const adminShouldPoll =
     document.visibilityState === "visible" &&
     location.pathname === "/settings" &&
     state.session?.authLevel === "admin" &&
-    Boolean(state.adminCalendar.seatCountId);
+    Boolean(state.adminCalendar.seatCountId) &&
+    !settingsInputActive;
 
   if (widgetShouldPoll && !widgetLiveRefreshHandle) {
     widgetLiveRefreshHandle = setInterval(() => {
@@ -2175,6 +2532,19 @@ function syncLiveRefresh() {
   }
 }
 
+function isSettingsInputActive() {
+  if (location.pathname !== "/settings") {
+    return false;
+  }
+
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(activeElement.closest("input, select, textarea"));
+}
+
 async function postJson(url, payload, scope) {
   clearStatus(scope);
   const response = await fetch(url, {
@@ -2202,6 +2572,15 @@ async function readApiResponse(response) {
   return { error: text || `Request failed with status ${response.status}.` };
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
 function createEmptyUserForm() {
   return {
     mode: "create",
@@ -2221,6 +2600,23 @@ function createEmptyCompanyForm() {
     mode: "create",
     companyId: null,
     name: "",
+  };
+}
+
+function createDefaultAppSettings() {
+  return {
+    openAiModel: "gpt-5.4-nano",
+  };
+}
+
+function createEmptyWidgetEditorState() {
+  return {
+    companyId: "",
+    establishmentId: "",
+    prompt: "",
+    draftCss: "",
+    attachments: [],
+    lastGeneratedModel: "",
   };
 }
 
@@ -2387,6 +2783,32 @@ function syncWidgetSetupSelections() {
   }
 }
 
+function syncWidgetEditorSelections() {
+  const companies = getWidgetEditorCompanies();
+  if (!companies.length) {
+    state.widgetEditor.companyId = "";
+    state.widgetEditor.establishmentId = "";
+    state.widgetEditor.draftCss = "";
+    state.widgetEditor.attachments = [];
+    return;
+  }
+
+  if (!companies.some((company) => company.id === state.widgetEditor.companyId)) {
+    state.widgetEditor.companyId = companies[0].id;
+  }
+
+  const establishments = getWidgetEditorEstablishments();
+  if (!establishments.some((establishment) => establishment.id === state.widgetEditor.establishmentId)) {
+    state.widgetEditor.establishmentId = establishments[0]?.id ?? "";
+  }
+
+  const selectedEstablishment = getSelectedWidgetEditorEstablishment();
+  const savedCss = selectedEstablishment?.widgetTheme?.cssText ?? "";
+  if (!state.widgetEditor.draftCss || state.widgetEditor.establishmentId !== selectedEstablishment?.id) {
+    state.widgetEditor.draftCss = savedCss;
+  }
+}
+
 function syncAdminCalendarSelections() {
   const companies = getAdminCalendarCompanies();
   if (!companies.length) {
@@ -2478,6 +2900,7 @@ function getSeatCountById(seatCountId) {
             companyName: company.name,
             establishmentName: establishment.name,
             establishmentLabel: `${company.name} | ${establishment.name}`,
+            widgetThemeCss: establishment.widgetTheme?.cssText ?? "",
           };
         }
       }
@@ -2489,6 +2912,21 @@ function getSeatCountById(seatCountId) {
 
 function getWidgetSetupCompanies() {
   return state.companies.length ? state.companies : state.widgetCatalog;
+}
+
+function getWidgetEditorCompanies() {
+  return state.companies;
+}
+
+function getWidgetEditorEstablishments() {
+  const company = getWidgetEditorCompanies().find((item) => item.id === state.widgetEditor.companyId);
+  return company?.establishments ?? [];
+}
+
+function getSelectedWidgetEditorEstablishment() {
+  return getWidgetEditorEstablishments().find(
+    (establishment) => establishment.id === state.widgetEditor.establishmentId,
+  ) ?? null;
 }
 
 function getAdminCalendarCompanies() {
@@ -2513,6 +2951,12 @@ function getWidgetCatalogSource() {
 
 function getSelectedWidgetSeatCount() {
   return getSeatCountById(state.widget.seatCountId);
+}
+
+function getWidgetEditorPreviewUrl() {
+  const establishment = getSelectedWidgetEditorEstablishment();
+  const seatCountId = establishment?.seatCounts?.[0]?.id ?? "";
+  return seatCountId ? `${location.origin}/widget?seatCountId=${encodeURIComponent(seatCountId)}` : "";
 }
 
 function getAdminSelectedBooking() {
@@ -2614,6 +3058,10 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeStyleTagContent(value) {
+  return String(value ?? "").replaceAll("</style", "<\\/style");
 }
 
 boot().catch(() => {
