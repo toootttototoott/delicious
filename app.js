@@ -56,6 +56,11 @@ const routes = new Map([
   ["/widget-setup", renderWidgetSetupPage],
 ]);
 
+let widgetLiveRefreshHandle = null;
+let adminLiveRefreshHandle = null;
+let widgetRefreshInFlight = false;
+let adminRefreshInFlight = false;
+
 document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
   const actionTarget = event.target.closest("[data-action]");
@@ -104,6 +109,26 @@ window.addEventListener("popstate", () => {
 
   syncWidgetFromLocation();
   render();
+});
+
+document.addEventListener("visibilitychange", () => {
+  syncLiveRefresh();
+
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+
+  if (location.pathname === "/widget" && state.widget.seatCountId) {
+    refreshWidgetAvailability({ silent: true }).then(render).catch(() => {});
+  }
+
+  if (
+    location.pathname === "/settings" &&
+    state.session?.authLevel === "admin" &&
+    state.adminCalendar.seatCountId
+  ) {
+    refreshAdminAvailability({ silent: true }).then(render).catch(() => {});
+  }
 });
 
 document.addEventListener("submit", async (event) => {
@@ -338,6 +363,7 @@ function navigate(target) {
 
 function render() {
   applyRouteChrome();
+  syncLiveRefresh();
 
   if (needsAdminRedirect("/settings") || needsAdminRedirect("/widget-setup")) {
     history.replaceState({}, "", "/login");
@@ -1264,11 +1290,18 @@ function renderWidgetModal(activeDate) {
   }
 
   if (state.widget.modal === "details") {
+    const selectedSlot = activeDate?.slots.find((slot) => slot.time === state.widget.selectedTime) ?? null;
+    const remainingSeats = Math.max(Number(selectedSlot?.remaining ?? 0), 0);
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
           <p class="eyebrow">Booking details</p>
           <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(state.widget.selectedTime)}</h3>
+          <p class="meta">${
+            remainingSeats > 0
+              ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available for this time`
+              : "No seats available for this time"
+          }</p>
           <form class="stack widget-form" data-widget-form>
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
             <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
@@ -1276,7 +1309,15 @@ function renderWidgetModal(activeDate) {
             <div class="form-grid">
               <div class="field">
                 <label for="booking-party-size">Number of people</label>
-                <input id="booking-party-size" name="partySize" type="number" min="1" required />
+                <input
+                  id="booking-party-size"
+                  name="partySize"
+                  type="number"
+                  min="1"
+                  max="${remainingSeats || 1}"
+                  value="1"
+                  required
+                />
               </div>
               <div class="field">
                 <label for="booking-first-name">First name</label>
@@ -1300,7 +1341,7 @@ function renderWidgetModal(activeDate) {
               </div>
             </div>
             <div class="stack-inline">
-              <button type="submit">Book selected slot</button>
+              <button type="submit" ${remainingSeats > 0 ? "" : "disabled"}>Book selected slot</button>
               <button type="button" class="ghost-button" data-action="backToTimeModal">Back</button>
             </div>
           </form>
@@ -1903,9 +1944,32 @@ async function handleCompanySubmit(form) {
 
 async function handleWidgetBooking(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
+  const activeDate = state.widgetAvailability.find((item) => item.date === payload.bookingDate);
+  const selectedSlot = activeDate?.slots.find((slot) => slot.time === payload.bookingTime) ?? null;
+  const remainingSeats = Number(selectedSlot?.remaining ?? 0);
+  const requestedSeats = Number(payload.partySize ?? 0);
 
   if (!payload.bookingDate || !payload.bookingTime) {
     setStatus("widget", "error", "Choose a day and time before booking.");
+    return;
+  }
+
+  if (!Number.isInteger(requestedSeats) || requestedSeats <= 0) {
+    setStatus("widget", "error", "Enter a valid number of people.");
+    return;
+  }
+
+  if (!selectedSlot || remainingSeats <= 0) {
+    setStatus("widget", "error", "That time is no longer available.");
+    return;
+  }
+
+  if (requestedSeats > remainingSeats) {
+    setStatus(
+      "widget",
+      "error",
+      `Only ${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} remain for that time.`,
+    );
     return;
   }
 
@@ -1968,7 +2032,12 @@ async function refreshAdminState() {
   render();
 }
 
-async function refreshWidgetAvailability() {
+async function refreshWidgetAvailability(options = {}) {
+  return refreshWidgetAvailabilityImpl(options);
+}
+
+async function refreshWidgetAvailabilityImpl(options = {}) {
+  const silent = options.silent === true;
   if (!state.widget.seatCountId) {
     state.widgetAvailability = [];
     state.widget.selectedDate = "";
@@ -1977,7 +2046,9 @@ async function refreshWidgetAvailability() {
     return;
   }
 
-  setStatus("widget", "info", "Loading availability...");
+  if (!silent) {
+    setStatus("widget", "info", "Loading availability...");
+  }
   const monthStart = monthStartDate(state.widget.currentMonth);
   const days = daysInMonth(state.widget.currentMonth);
   const response = await fetch(
@@ -1993,7 +2064,9 @@ async function refreshWidgetAvailability() {
   }
 
   state.widgetAvailability = data.dates ?? [];
-  clearStatus("widget");
+  if (!silent) {
+    clearStatus("widget");
+  }
   if (!state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)) {
     state.widget.selectedDate = state.widgetAvailability[0]?.date ?? "";
     state.widget.selectedTime = "";
@@ -2009,7 +2082,8 @@ async function refreshWidgetAvailability() {
   }
 }
 
-async function refreshAdminAvailability() {
+async function refreshAdminAvailability(options = {}) {
+  const silent = options.silent === true;
   if (!state.adminCalendar.seatCountId || state.session?.authLevel !== "admin") {
     state.adminAvailability = [];
     state.adminCalendar.selectedDate = "";
@@ -2019,7 +2093,9 @@ async function refreshAdminAvailability() {
     return;
   }
 
-  setStatus("bookings", "info", "Loading booking calendar...");
+  if (!silent) {
+    setStatus("bookings", "info", "Loading booking calendar...");
+  }
   const monthStart = monthStartDate(state.adminCalendar.currentMonth);
   const days = daysInMonth(state.adminCalendar.currentMonth);
   const response = await fetch(
@@ -2034,12 +2110,68 @@ async function refreshAdminAvailability() {
   }
 
   state.adminAvailability = data.dates ?? [];
-  clearStatus("bookings");
+  if (!silent) {
+    clearStatus("bookings");
+  }
   if (!state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate)) {
     state.adminCalendar.selectedDate = "";
     state.adminCalendar.selectedTime = "";
     state.adminCalendar.editingBookingId = "";
     state.adminCalendar.modal = null;
+  }
+}
+
+function syncLiveRefresh() {
+  const widgetShouldPoll =
+    document.visibilityState === "visible" &&
+    location.pathname === "/widget" &&
+    Boolean(state.widget.seatCountId);
+  const adminShouldPoll =
+    document.visibilityState === "visible" &&
+    location.pathname === "/settings" &&
+    state.session?.authLevel === "admin" &&
+    Boolean(state.adminCalendar.seatCountId);
+
+  if (widgetShouldPoll && !widgetLiveRefreshHandle) {
+    widgetLiveRefreshHandle = setInterval(() => {
+      if (widgetRefreshInFlight) {
+        return;
+      }
+
+      widgetRefreshInFlight = true;
+      refreshWidgetAvailability({ silent: true })
+        .then(() => render())
+        .catch(() => {})
+        .finally(() => {
+          widgetRefreshInFlight = false;
+        });
+    }, 4000);
+  }
+
+  if (!widgetShouldPoll && widgetLiveRefreshHandle) {
+    clearInterval(widgetLiveRefreshHandle);
+    widgetLiveRefreshHandle = null;
+  }
+
+  if (adminShouldPoll && !adminLiveRefreshHandle) {
+    adminLiveRefreshHandle = setInterval(() => {
+      if (adminRefreshInFlight) {
+        return;
+      }
+
+      adminRefreshInFlight = true;
+      refreshAdminAvailability({ silent: true })
+        .then(() => render())
+        .catch(() => {})
+        .finally(() => {
+          adminRefreshInFlight = false;
+        });
+    }, 4000);
+  }
+
+  if (!adminShouldPoll && adminLiveRefreshHandle) {
+    clearInterval(adminLiveRefreshHandle);
+    adminLiveRefreshHandle = null;
   }
 }
 
