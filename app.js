@@ -1,6 +1,8 @@
 const state = {
   session: null,
   users: [],
+  maskedUsers: [],
+  userCount: 0,
   status: null,
 };
 
@@ -56,6 +58,8 @@ async function loadSession() {
   const payload = await readApiResponse(response);
   state.session = payload.session;
   state.users = payload.users ?? [];
+  state.maskedUsers = payload.maskedUsers ?? [];
+  state.userCount = payload.userCount ?? 0;
 }
 
 function navigate(pathname) {
@@ -163,8 +167,17 @@ function renderSettingsPage() {
           <p class="eyebrow">Settings page</p>
           <h2>Admin login required</h2>
           <p class="meta">Sign in on the display page with an admin account first.</p>
+          <p class="meta">Users stored: ${state.userCount}</p>
           <a class="button-primary" href="/login" data-link>Go to login</a>
         </article>
+        <aside class="panel side">
+          <p class="eyebrow">Saved users</p>
+          <h3>Verification</h3>
+          <p class="meta">This preview is visible before login so you can confirm records exist. Emails are masked.</p>
+          <div class="users">
+            ${renderMaskedUsers()}
+          </div>
+        </aside>
       </section>
     `;
   }
@@ -254,6 +267,26 @@ function renderUsers() {
         <article class="user-card">
           <div>
             <strong>${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</strong>
+            <p class="meta">${escapeHtml(user.email)}</p>
+          </div>
+          <span class="badge">${escapeHtml(user.authLevel)}</span>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderMaskedUsers() {
+  if (!state.maskedUsers.length) {
+    return '<div class="empty">No saved users detected yet.</div>';
+  }
+
+  return state.maskedUsers
+    .map(
+      (user) => `
+        <article class="user-card">
+          <div>
+            <strong>${escapeHtml(user.name)}</strong>
             <p class="meta">${escapeHtml(user.email)}</p>
           </div>
           <span class="badge">${escapeHtml(user.authLevel)}</span>
