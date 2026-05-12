@@ -1637,16 +1637,15 @@ function renderWidgetTimes(activeDate) {
 
   return activeDate.slots
     .map((slot) => {
-      const rawSeatLoad =
-        slot.capacity > 0 ? 1 - (slot.remaining ?? slot.capacity) / slot.capacity : 0;
-      const seatLoad = curveSeatLoad(rawSeatLoad);
+      const presentation = getTimeSlotPresentation(slot);
       return `
         <button
           type="button"
-          class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
+          class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""} ${presentation.className}"
           data-action="selectWidgetTime"
           data-time="${slot.time}"
-          style="--seat-load:${seatLoad.toFixed(3)}"
+          data-fullness="${presentation.status}"
+          style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
           ${slot.available ? "" : "disabled"}
         >
           ${slot.time}
@@ -3334,6 +3333,55 @@ function getCalendarDayHoursLabel(availability) {
   const openTime = String(availability?.openTime ?? "").trim();
   const closeTime = String(availability?.closeTime ?? "").trim();
   return openTime && closeTime ? `${openTime}-${closeTime}` : "Open";
+}
+
+function getTimeSlotPresentation(slot) {
+  if (!slot?.available) {
+    return {
+      className: "status-full",
+      rawSeatLoad: 1,
+      seatLoad: 1,
+      status: "full",
+    };
+  }
+
+  const rawSeatLoad =
+    slot.capacity > 0 ? 1 - (slot.remaining ?? slot.capacity) / slot.capacity : 0;
+  const seatLoad = curveSeatLoad(rawSeatLoad);
+
+  if (rawSeatLoad === 0) {
+    return {
+      className: "status-open",
+      rawSeatLoad,
+      seatLoad,
+      status: "open",
+    };
+  }
+
+  if (rawSeatLoad < 0.35) {
+    return {
+      className: "status-filling",
+      rawSeatLoad,
+      seatLoad,
+      status: "filling",
+    };
+  }
+
+  if (rawSeatLoad < 0.75) {
+    return {
+      className: "status-busy",
+      rawSeatLoad,
+      seatLoad,
+      status: "busy",
+    };
+  }
+
+  return {
+    className: "status-nearly-full",
+    rawSeatLoad,
+    seatLoad,
+    status: "nearly-full",
+  };
 }
 
 function escapeHtml(value) {
