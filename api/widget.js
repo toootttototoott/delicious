@@ -23,7 +23,7 @@ export default async function handler(request, response) {
     if (action === "availability") {
       const seatCountId = url.searchParams.get("seatCountId");
       const fromDate = url.searchParams.get("fromDate");
-      const days = Number(url.searchParams.get("days") ?? 14);
+      const days = Number(url.searchParams.get("days") ?? 31);
       const availability = await listSeatCountAvailability(seatCountId, fromDate, days);
 
       if (availability.error) {
@@ -57,6 +57,7 @@ export default async function handler(request, response) {
       message: "Booking confirmed.",
       bookingDate: result.bookingDate,
       bookingTime: result.bookingTime,
+      bookingId: result.bookingId,
     });
     return;
   }

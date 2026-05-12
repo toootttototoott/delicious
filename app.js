@@ -9,6 +9,7 @@ const state = {
     auth: null,
     users: null,
     companies: null,
+    bookings: null,
     widget: null,
     widgetSetup: null,
   },
@@ -34,6 +35,17 @@ const state = {
     selectedTime: "",
     modal: null,
   },
+  adminCalendar: {
+    companyId: "",
+    establishmentId: "",
+    seatCountId: "",
+    currentMonth: monthKey(todayString()),
+    selectedDate: "",
+    selectedTime: "",
+    modal: null,
+    editingBookingId: "",
+  },
+  adminAvailability: [],
 };
 
 const routes = new Map([
@@ -98,6 +110,12 @@ document.addEventListener("submit", async (event) => {
   if (event.target.matches("[data-widget-form]")) {
     event.preventDefault();
     await handleWidgetBooking(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-admin-booking-form]")) {
+    event.preventDefault();
+    await handleAdminBookingSubmit(event.target);
   }
 });
 
@@ -168,6 +186,27 @@ document.addEventListener("change", async (event) => {
   if (event.target.matches("[data-setup-seat-count]")) {
     state.widgetSetup.seatCountId = event.target.value;
     render();
+    return;
+  }
+
+  if (event.target.matches("[data-booking-company]")) {
+    state.adminCalendar.companyId = event.target.value;
+    syncAdminCalendarSelections();
+    refreshAdminAvailability().then(render);
+    return;
+  }
+
+  if (event.target.matches("[data-booking-establishment]")) {
+    state.adminCalendar.establishmentId = event.target.value;
+    syncAdminCalendarSelections();
+    refreshAdminAvailability().then(render);
+    return;
+  }
+
+  if (event.target.matches("[data-booking-seat-count]")) {
+    state.adminCalendar.seatCountId = event.target.value;
+    syncAdminCalendarSelections();
+    refreshAdminAvailability().then(render);
   }
 });
 
@@ -179,6 +218,9 @@ async function boot() {
   }
 
   syncWidgetFromLocation();
+  if (state.session?.authLevel === "admin") {
+    await refreshAdminAvailability();
+  }
 
   if (location.pathname === "/") {
     history.replaceState({}, "", "/login");
@@ -196,6 +238,7 @@ async function loadSession() {
   state.userCount = Number(payload.userCount ?? 0);
   pruneSelections();
   syncWidgetSetupSelections();
+  syncAdminCalendarSelections();
 }
 
 async function loadWidgetCatalog() {
@@ -217,6 +260,8 @@ function navigate(target) {
 }
 
 function render() {
+  applyRouteChrome();
+
   if (needsAdminRedirect("/settings") || needsAdminRedirect("/widget-setup")) {
     history.replaceState({}, "", "/login");
     if (!state.statuses.auth) {
@@ -230,6 +275,17 @@ function render() {
   app.innerHTML = (routes.get(location.pathname) ?? renderLoginPage)();
 }
 
+function applyRouteChrome() {
+  const body = document.body;
+  const shell = document.querySelector(".shell");
+  const masthead = document.querySelector(".masthead");
+  const isWidgetRoute = location.pathname === "/widget";
+
+  body.classList.toggle("widget-embed", isWidgetRoute);
+  shell?.classList.toggle("widget-embed-shell", isWidgetRoute);
+  masthead?.classList.toggle("is-hidden", isWidgetRoute);
+}
+
 function needsAdminRedirect(pathname) {
   return (
     location.pathname === pathname &&
@@ -239,6 +295,10 @@ function needsAdminRedirect(pathname) {
 }
 
 function renderTopnav() {
+  if (location.pathname === "/widget") {
+    return "";
+  }
+
   const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
   return `
     <a href="/login" data-link>Display</a>
@@ -401,6 +461,16 @@ function renderSettingsPage() {
         </div>
         <div class="company-list">${renderCompanies()}</div>
       </article>
+      <article class="panel full-width">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Bookings panel</p>
+            <h3>Booking calendar</h3>
+            <p class="meta">Set weekly opening hours, inspect remaining seats, and manage bookings from the calendar.</p>
+          </div>
+        </div>
+        ${renderBookingsPanel()}
+      </article>
     </section>
   `;
 }
@@ -516,8 +586,6 @@ function renderWidgetPage() {
   }
 
   const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
-  const seatCountLabel = getSelectedWidgetSeatCount().label;
-  const establishmentLabel = getSelectedWidgetSeatCount().establishmentLabel;
 
   return `
     <section class="layout widget-layout">
@@ -780,6 +848,25 @@ function renderEstablishment(company, establishment) {
           <button type="button" class="ghost-button" data-action="addSeatCount" data-establishment-id="${establishment.id}">Add seat count</button>
         </div>
       </div>
+      <div class="subsection hours-editor">
+        <div class="entity-row">
+          <div>
+            <p class="eyebrow">Weekly opening hours</p>
+            <p class="meta">These hours repeat every week for all calendars under this establishment.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button"
+            data-action="saveOpeningHours"
+            data-establishment-id="${establishment.id}"
+          >
+            Save hours
+          </button>
+        </div>
+        <div class="hours-grid">
+          ${renderOpeningHoursEditor(establishment)}
+        </div>
+      </div>
       <div class="chip-row">
         ${
           establishment.seatCounts.length
@@ -810,6 +897,117 @@ function renderEstablishment(company, establishment) {
   `;
 }
 
+function renderOpeningHoursEditor(establishment) {
+  return establishment.openingHours
+    .map(
+      (day) => `
+        <div class="hours-row">
+          <div class="hours-label">${escapeHtml(day.label)}</div>
+          <label class="checkbox compact-checkbox">
+            <input
+              type="checkbox"
+              data-hours-open
+              data-establishment-id="${establishment.id}"
+              data-weekday="${day.weekdayIndex}"
+              ${day.isOpen ? "checked" : ""}
+            />
+            <span>Open</span>
+          </label>
+          <input
+            type="time"
+            step="3600"
+            data-hours-start
+            data-establishment-id="${establishment.id}"
+            data-weekday="${day.weekdayIndex}"
+            value="${escapeHtml(day.openTime || "09:00")}"
+          />
+          <input
+            type="time"
+            step="3600"
+            data-hours-end
+            data-establishment-id="${establishment.id}"
+            data-weekday="${day.weekdayIndex}"
+            value="${escapeHtml(day.closeTime || "17:00")}"
+          />
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderBookingsPanel() {
+  const companies = getAdminCalendarCompanies();
+  const establishments = getAdminCalendarEstablishments();
+  const seatCounts = getAdminCalendarSeatCounts();
+
+  return `
+    <div class="stack">
+      <div class="form-grid">
+        <div class="field">
+          <label for="booking-company">Company</label>
+          <select id="booking-company" data-booking-company>
+            ${companies
+              .map(
+                (company) => `
+                  <option value="${company.id}" ${state.adminCalendar.companyId === company.id ? "selected" : ""}>
+                    ${escapeHtml(company.name)}
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label for="booking-establishment">Establishment</label>
+          <select id="booking-establishment" data-booking-establishment>
+            ${establishments.length ? "" : '<option value="">No establishments</option>'}
+            ${establishments
+              .map(
+                (establishment) => `
+                  <option value="${establishment.id}" ${state.adminCalendar.establishmentId === establishment.id ? "selected" : ""}>
+                    ${escapeHtml(establishment.name)}
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+        </div>
+        <div class="field full">
+          <label for="booking-seat-count">Seat-count calendar</label>
+          <select id="booking-seat-count" data-booking-seat-count>
+            ${seatCounts.length ? "" : '<option value="">No seat counts</option>'}
+            ${seatCounts
+              .map(
+                (seatCount) => `
+                  <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
+                    ${escapeHtml(seatCount.seatCount)} seats
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+        </div>
+      </div>
+      ${renderStatus("bookings")}
+      ${
+        !companies.length
+          ? '<div class="empty">Create a company before managing bookings.</div>'
+          : !establishments.length
+            ? '<div class="empty">Create an establishment and opening hours first.</div>'
+            : !seatCounts.length
+              ? '<div class="empty">Create at least one seat-count calendar for this establishment.</div>'
+              : `
+                <div class="booking-calendar-shell">
+                  ${renderAdminCalendarNavigator()}
+                  ${renderAdminCalendar()}
+                </div>
+                ${renderAdminCalendarModal()}
+              `
+      }
+    </div>
+  `;
+}
+
 function renderCalendarNavigator() {
   const label = formatMonthLabel(state.widget.currentMonth);
   return `
@@ -817,6 +1015,17 @@ function renderCalendarNavigator() {
       <button type="button" class="ghost-button" data-action="previousWidgetMonth">Previous</button>
       <div class="calendar-month">${escapeHtml(label)}</div>
       <button type="button" class="ghost-button" data-action="nextWidgetMonth">Next</button>
+    </div>
+  `;
+}
+
+function renderAdminCalendarNavigator() {
+  const label = formatMonthLabel(state.adminCalendar.currentMonth);
+  return `
+    <div class="calendar-nav">
+      <button type="button" class="ghost-button" data-action="previousAdminMonth">Previous</button>
+      <div class="calendar-month">${escapeHtml(label)}</div>
+      <button type="button" class="ghost-button" data-action="nextAdminMonth">Next</button>
     </div>
   `;
 }
@@ -840,15 +1049,81 @@ function renderWidgetCalendar() {
   for (let day = 1; day <= monthEndDay; day += 1) {
     const date = toDateString(year, monthIndex, day);
     const availability = availabilityByDate.get(date);
-    const availableCount = availability?.slots.filter((slot) => slot.available).length ?? 0;
     const isSelected = state.widget.selectedDate === date;
-    const caption =
-      availability == null ? "Check" : availableCount ? `${availableCount} free` : "Full";
+    const className = availability?.isOpen
+      ? availability.remaining > 0
+        ? "has-availability"
+        : "is-full"
+      : "is-closed";
+    const caption = !availability
+      ? "Check"
+      : !availability.isOpen
+        ? "Closed"
+        : availability.remaining === availability.capacity
+          ? `${availability.capacity} seats`
+          : availability.remaining > 0
+            ? `${availability.remaining}/${availability.capacity} left`
+            : "Full";
     cells.push(`
       <button
         type="button"
-        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${availableCount ? "has-availability" : "is-full"}"
+        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
         data-action="selectWidgetDate"
+        data-date="${date}"
+        ${availability?.isOpen ? "" : "disabled"}
+      >
+        <span class="calendar-number">${day}</span>
+        <span class="calendar-caption">${caption}</span>
+      </button>
+    `);
+  }
+
+  return `
+    <div class="calendar-shell">
+      <div class="calendar-weekdays">${weekdayHeaders}</div>
+      <div class="calendar-month-grid">${cells.join("")}</div>
+    </div>
+  `;
+}
+
+function renderAdminCalendar() {
+  const { year, monthIndex } = parseMonthKey(state.adminCalendar.currentMonth);
+  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+  const monthEndDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const firstWeekday = (monthStart.getUTCDay() + 6) % 7;
+  const availabilityByDate = new Map(state.adminAvailability.map((item) => [item.date, item]));
+  const weekdayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    .map((day) => `<div class="weekday">${day}</div>`)
+    .join("");
+
+  const cells = [];
+
+  for (let index = 0; index < firstWeekday; index += 1) {
+    cells.push('<div class="calendar-cell calendar-pad"></div>');
+  }
+
+  for (let day = 1; day <= monthEndDay; day += 1) {
+    const date = toDateString(year, monthIndex, day);
+    const availability = availabilityByDate.get(date);
+    const isSelected = state.adminCalendar.selectedDate === date;
+    const className = availability?.isOpen
+      ? availability.remaining > 0
+        ? "has-availability"
+        : "is-full"
+      : "is-closed";
+    const caption = !availability
+      ? "Check"
+      : !availability.isOpen
+        ? "Closed"
+        : availability.remaining === availability.capacity
+          ? `${availability.capacity} seats`
+          : `${availability.remaining}/${availability.capacity} left`;
+
+    cells.push(`
+      <button
+        type="button"
+        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
+        data-action="selectAdminDate"
         data-date="${date}"
       >
         <span class="calendar-number">${day}</span>
@@ -895,6 +1170,10 @@ function renderWidgetModal(activeDate) {
             <input type="hidden" name="bookingTime" value="${escapeHtml(state.widget.selectedTime)}" />
             <div class="form-grid">
               <div class="field">
+                <label for="booking-party-size">Number of people</label>
+                <input id="booking-party-size" name="partySize" type="number" min="1" required />
+              </div>
+              <div class="field">
                 <label for="booking-first-name">First name</label>
                 <input id="booking-first-name" name="firstName" required />
               </div>
@@ -935,7 +1214,7 @@ function renderWidgetTimes(activeDate) {
 
   return activeDate.slots
     .map(
-      (slot) => `
+          (slot) => `
         <button
           type="button"
           class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
@@ -943,11 +1222,130 @@ function renderWidgetTimes(activeDate) {
           data-time="${slot.time}"
           ${slot.available ? "" : "disabled"}
         >
-          ${slot.time}
+          ${slot.time} · ${slot.remaining} left
         </button>
       `,
     )
     .join("");
+}
+
+function renderAdminCalendarModal() {
+  const activeDate =
+    state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate) ?? null;
+
+  if (state.adminCalendar.modal === "day" && activeDate) {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeAdminCalendarModal">
+        <div class="widget-modal admin-booking-modal" data-modal-panel>
+          <p class="eyebrow">Bookings</p>
+          <h3>${escapeHtml(state.adminCalendar.selectedDate)}</h3>
+          <p class="meta">
+            ${
+              activeDate.isOpen
+                ? `${escapeHtml(activeDate.openTime)} to ${escapeHtml(activeDate.closeTime)}`
+                : "Closed"
+            }
+          </p>
+          <div class="admin-slot-list">
+            ${activeDate.isOpen ? activeDate.slots.map((slot) => renderAdminSlot(slot)).join("") : '<div class="empty">This day is closed.</div>'}
+          </div>
+          <div class="stack-inline">
+            <button type="button" class="ghost-button" data-action="closeAdminCalendarModal">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.adminCalendar.modal === "form") {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeAdminCalendarModal">
+        <div class="widget-modal admin-booking-modal" data-modal-panel>
+          <p class="eyebrow">${state.adminCalendar.editingBookingId ? "Edit booking" : "Add booking"}</p>
+          <h3>${escapeHtml(state.adminCalendar.selectedDate)} at ${escapeHtml(state.adminCalendar.selectedTime)}</h3>
+          <form class="stack" data-admin-booking-form>
+            <input type="hidden" name="bookingId" value="${escapeHtml(state.adminCalendar.editingBookingId)}" />
+            <input type="hidden" name="seatCountId" value="${escapeHtml(state.adminCalendar.seatCountId)}" />
+            <input type="hidden" name="bookingDate" value="${escapeHtml(state.adminCalendar.selectedDate)}" />
+            <input type="hidden" name="bookingTime" value="${escapeHtml(state.adminCalendar.selectedTime)}" />
+            <div class="form-grid">
+              <div class="field">
+                <label for="admin-party-size">Number of people</label>
+                <input id="admin-party-size" name="partySize" type="number" min="1" value="${escapeHtml(getEditingBookingValue("partySize") || "1")}" required />
+              </div>
+              <div class="field">
+                <label for="admin-booking-first-name">First name</label>
+                <input id="admin-booking-first-name" name="firstName" value="${escapeHtml(getEditingBookingValue("firstName"))}" required />
+              </div>
+              <div class="field">
+                <label for="admin-booking-last-name">Last name</label>
+                <input id="admin-booking-last-name" name="lastName" value="${escapeHtml(getEditingBookingValue("lastName"))}" required />
+              </div>
+              <div class="field full">
+                <label for="admin-booking-email">Email</label>
+                <input id="admin-booking-email" name="email" type="email" value="${escapeHtml(getEditingBookingValue("email"))}" required />
+              </div>
+              <div class="field full">
+                <label for="admin-booking-phone">Phone</label>
+                <input id="admin-booking-phone" name="phone" value="${escapeHtml(getEditingBookingValue("phone"))}" required />
+              </div>
+              <div class="field full">
+                <label for="admin-booking-notes">Notes</label>
+                <input id="admin-booking-notes" name="notes" value="${escapeHtml(getEditingBookingValue("notes"))}" />
+              </div>
+            </div>
+            <div class="stack-inline">
+              <button type="submit">${state.adminCalendar.editingBookingId ? "Save booking" : "Create booking"}</button>
+              <button type="button" class="ghost-button" data-action="backToAdminDayModal">Back</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  return "";
+}
+
+function renderAdminSlot(slot) {
+  return `
+    <div class="nested-card">
+      <div class="entity-row">
+        <div>
+          <strong>${escapeHtml(slot.time)}</strong>
+          <p class="meta">${slot.remaining}/${slot.capacity} seats left</p>
+        </div>
+        <button
+          type="button"
+          class="ghost-button"
+          data-action="createAdminBooking"
+          data-time="${slot.time}"
+        >
+          Add booking
+        </button>
+      </div>
+      ${
+        slot.bookings?.length
+          ? slot.bookings
+              .map(
+                (booking) => `
+                  <div class="entity-row booking-row">
+                    <div>
+                      <strong>${escapeHtml(booking.firstName)} ${escapeHtml(booking.lastName)}</strong>
+                      <p class="meta">${escapeHtml(booking.partySize)} people | ${escapeHtml(booking.email)}</p>
+                    </div>
+                    <div class="stack-inline">
+                      <button type="button" class="ghost-button" data-action="editAdminBooking" data-booking-id="${booking.id}" data-time="${slot.time}">Edit</button>
+                      <button type="button" class="ghost-button" data-action="deleteAdminBooking" data-booking-id="${booking.id}">Delete</button>
+                    </div>
+                  </div>
+                `,
+              )
+              .join("")
+          : '<p class="meta">No bookings for this time.</p>'
+      }
+    </div>
+  `;
 }
 
 async function handleAction(action, dataset) {
@@ -973,7 +1371,7 @@ async function handleAction(action, dataset) {
   if (action === "selectWidgetDate") {
     state.widget.selectedDate = dataset.date;
     state.widget.selectedTime = "";
-     state.widget.modal = "time";
+    state.widget.modal = "time";
     render();
     return;
   }
@@ -993,6 +1391,79 @@ async function handleAction(action, dataset) {
 
   if (action === "backToTimeModal") {
     state.widget.modal = "time";
+    render();
+    return;
+  }
+
+  if (action === "previousAdminMonth") {
+    state.adminCalendar.currentMonth = shiftMonth(state.adminCalendar.currentMonth, -1);
+    await refreshAdminAvailability();
+    render();
+    return;
+  }
+
+  if (action === "nextAdminMonth") {
+    state.adminCalendar.currentMonth = shiftMonth(state.adminCalendar.currentMonth, 1);
+    await refreshAdminAvailability();
+    render();
+    return;
+  }
+
+  if (action === "selectAdminDate") {
+    state.adminCalendar.selectedDate = dataset.date;
+    state.adminCalendar.selectedTime = "";
+    state.adminCalendar.editingBookingId = "";
+    state.adminCalendar.modal = "day";
+    clearStatus("bookings");
+    render();
+    return;
+  }
+
+  if (action === "closeAdminCalendarModal") {
+    state.adminCalendar.modal = null;
+    state.adminCalendar.selectedTime = "";
+    state.adminCalendar.editingBookingId = "";
+    render();
+    return;
+  }
+
+  if (action === "createAdminBooking") {
+    state.adminCalendar.selectedTime = dataset.time;
+    state.adminCalendar.editingBookingId = "";
+    state.adminCalendar.modal = "form";
+    clearStatus("bookings");
+    render();
+    return;
+  }
+
+  if (action === "editAdminBooking") {
+    state.adminCalendar.selectedTime = dataset.time;
+    state.adminCalendar.editingBookingId = dataset.bookingId;
+    state.adminCalendar.modal = "form";
+    clearStatus("bookings");
+    render();
+    return;
+  }
+
+  if (action === "deleteAdminBooking") {
+    if (!confirm("Delete this booking?")) {
+      return;
+    }
+
+    await postJson("/api/bookings", { action: "delete", bookingId: dataset.bookingId }, "bookings");
+    state.adminCalendar.editingBookingId = "";
+    await refreshAdminAvailability();
+    if (state.widget.seatCountId === state.adminCalendar.seatCountId) {
+      await refreshWidgetAvailability();
+    }
+    state.adminCalendar.modal = "day";
+    setStatus("bookings", "success", "Booking deleted.");
+    return;
+  }
+
+  if (action === "backToAdminDayModal") {
+    state.adminCalendar.modal = "day";
+    state.adminCalendar.editingBookingId = "";
     render();
     return;
   }
@@ -1144,6 +1615,18 @@ async function handleAction(action, dataset) {
     return;
   }
 
+  if (action === "saveOpeningHours") {
+    const openingHours = collectOpeningHours(dataset.establishmentId);
+    await postJson(
+      "/api/companies",
+      { action: "updateOpeningHours", establishmentId: dataset.establishmentId, openingHours },
+      "companies",
+    );
+    await refreshAdminState();
+    setStatus("companies", "success", "Opening hours updated.");
+    return;
+  }
+
   if (action === "editEstablishment") {
     const company = state.companies.find((item) => item.id === dataset.companyId);
     const establishment = company?.establishments.find((item) => item.id === dataset.establishmentId);
@@ -1280,17 +1763,36 @@ async function handleWidgetBooking(form) {
   setStatus("widget", "success", data.message ?? "Booking confirmed.");
 }
 
+async function handleAdminBookingSubmit(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.action = payload.bookingId ? "update" : "create";
+
+  const data = await postJson("/api/bookings", payload, "bookings");
+  state.adminCalendar.editingBookingId = "";
+  await refreshAdminAvailability();
+  if (state.widget.seatCountId === state.adminCalendar.seatCountId) {
+    await refreshWidgetAvailability();
+  }
+  state.adminCalendar.modal = "day";
+  setStatus("bookings", "success", data.message ?? "Booking saved.");
+}
+
 async function logout() {
   await fetch("/api/logout", { method: "POST" });
   state.session = null;
   state.users = [];
   state.companies = [];
+  state.adminAvailability = [];
   state.selectedUserIds.clear();
   state.selectedCompanyIds.clear();
   state.selectedEstablishmentIds.clear();
   state.selectedSeatCountIds.clear();
   state.userForm = createEmptyUserForm();
   state.companyForm = createEmptyCompanyForm();
+  state.adminCalendar.selectedDate = "";
+  state.adminCalendar.selectedTime = "";
+  state.adminCalendar.modal = null;
+  state.adminCalendar.editingBookingId = "";
   await loadSession();
   setStatus("auth", "success", "Signed out.");
   navigate("/login");
@@ -1298,6 +1800,11 @@ async function logout() {
 
 async function refreshAdminState() {
   await Promise.all([loadSession(), loadWidgetCatalog()]);
+  if (state.session?.authLevel === "admin") {
+    await refreshAdminAvailability();
+  } else {
+    state.adminAvailability = [];
+  }
   syncWidgetFromLocation();
   render();
 }
@@ -1338,6 +1845,38 @@ async function refreshWidgetAvailability() {
     if (state.widget.modal === "details") {
       state.widget.modal = "time";
     }
+  }
+}
+
+async function refreshAdminAvailability() {
+  if (!state.adminCalendar.seatCountId || state.session?.authLevel !== "admin") {
+    state.adminAvailability = [];
+    state.adminCalendar.selectedDate = "";
+    state.adminCalendar.selectedTime = "";
+    state.adminCalendar.modal = null;
+    state.adminCalendar.editingBookingId = "";
+    return;
+  }
+
+  const monthStart = monthStartDate(state.adminCalendar.currentMonth);
+  const days = daysInMonth(state.adminCalendar.currentMonth);
+  const response = await fetch(
+    `/api/bookings?action=calendar&seatCountId=${encodeURIComponent(state.adminCalendar.seatCountId)}&fromDate=${encodeURIComponent(monthStart)}&days=${days}`,
+  );
+  const data = await readApiResponse(response);
+
+  if (!response.ok) {
+    state.adminAvailability = [];
+    setStatus("bookings", "error", data.error ?? "Booking calendar could not be loaded.");
+    return;
+  }
+
+  state.adminAvailability = data.dates ?? [];
+  if (!state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate)) {
+    state.adminCalendar.selectedDate = "";
+    state.adminCalendar.selectedTime = "";
+    state.adminCalendar.editingBookingId = "";
+    state.adminCalendar.modal = null;
   }
 }
 
@@ -1533,25 +2072,54 @@ function syncWidgetSetupSelections() {
   }
 }
 
+function syncAdminCalendarSelections() {
+  const companies = getAdminCalendarCompanies();
+  if (!companies.length) {
+    state.adminCalendar.companyId = "";
+    state.adminCalendar.establishmentId = "";
+    state.adminCalendar.seatCountId = "";
+    state.adminAvailability = [];
+    return;
+  }
+
+  if (!companies.some((company) => company.id === state.adminCalendar.companyId)) {
+    state.adminCalendar.companyId = companies[0].id;
+  }
+
+  const establishments = getAdminCalendarEstablishments();
+  if (!establishments.some((establishment) => establishment.id === state.adminCalendar.establishmentId)) {
+    state.adminCalendar.establishmentId = establishments[0]?.id ?? "";
+  }
+
+  const seatCounts = getAdminCalendarSeatCounts();
+  if (!seatCounts.some((seatCount) => seatCount.id === state.adminCalendar.seatCountId)) {
+    state.adminCalendar.seatCountId = seatCounts[0]?.id ?? "";
+  }
+}
+
 function syncWidgetFromLocation() {
   const params = new URLSearchParams(location.search);
   const seatCountId = params.get("seatCountId") ?? "";
 
-  if (location.pathname === "/widget") {
-    state.widget.seatCountId = seatCountId;
-    const seatCount = getSeatCountById(seatCountId);
-    if (seatCount) {
-      if (!state.widget.currentMonth) {
-        state.widget.currentMonth = monthKey(todayString());
-      }
-      refreshWidgetAvailability().then(render);
-    } else {
-    state.widgetAvailability = [];
-    state.widget.selectedDate = "";
-    state.widget.selectedTime = "";
-    state.widget.modal = null;
+  if (location.pathname !== "/widget") {
+    return;
   }
-}
+
+  state.widget.seatCountId = seatCountId;
+  const seatCount = getSeatCountById(seatCountId);
+
+  if (seatCount) {
+    if (!state.widget.currentMonth) {
+      state.widget.currentMonth = monthKey(todayString());
+    }
+    refreshWidgetAvailability().then(render);
+    return;
+  }
+
+  state.widgetAvailability = [];
+  state.widget.selectedDate = "";
+  state.widget.selectedTime = "";
+  state.widget.modal = null;
 }
 
 function getWidgetSetupEstablishments() {
@@ -1608,12 +2176,72 @@ function getWidgetSetupCompanies() {
   return state.companies.length ? state.companies : state.widgetCatalog;
 }
 
+function getAdminCalendarCompanies() {
+  return state.companies;
+}
+
+function getAdminCalendarEstablishments() {
+  const company = getAdminCalendarCompanies().find((item) => item.id === state.adminCalendar.companyId);
+  return company?.establishments ?? [];
+}
+
+function getAdminCalendarSeatCounts() {
+  const establishment = getAdminCalendarEstablishments().find(
+    (item) => item.id === state.adminCalendar.establishmentId,
+  );
+  return establishment?.seatCounts ?? [];
+}
+
 function getWidgetCatalogSource() {
   return state.widgetCatalog.length ? state.widgetCatalog : state.companies;
 }
 
 function getSelectedWidgetSeatCount() {
   return getSeatCountById(state.widget.seatCountId);
+}
+
+function getAdminSelectedBooking() {
+  for (const date of state.adminAvailability) {
+    for (const slot of date.slots) {
+      for (const booking of slot.bookings ?? []) {
+        if (booking.id === state.adminCalendar.editingBookingId) {
+          return booking;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function getEditingBookingValue(field) {
+  const booking = getAdminSelectedBooking();
+  if (!booking) {
+    return "";
+  }
+
+  return booking[field] ?? "";
+}
+
+function collectOpeningHours(establishmentId) {
+  return Array.from({ length: 7 }, (_, weekdayIndex) => {
+    const openInput = document.querySelector(
+      `[data-hours-open][data-establishment-id="${establishmentId}"][data-weekday="${weekdayIndex}"]`,
+    );
+    const startInput = document.querySelector(
+      `[data-hours-start][data-establishment-id="${establishmentId}"][data-weekday="${weekdayIndex}"]`,
+    );
+    const endInput = document.querySelector(
+      `[data-hours-end][data-establishment-id="${establishmentId}"][data-weekday="${weekdayIndex}"]`,
+    );
+
+    return {
+      weekdayIndex,
+      isOpen: Boolean(openInput?.checked),
+      openTime: startInput?.value ?? "",
+      closeTime: endInput?.value ?? "",
+    };
+  });
 }
 
 function monthKey(dateString) {

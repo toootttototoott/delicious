@@ -27,10 +27,22 @@ body {
   color: var(--text);
 }
 
+body.widget-embed {
+  min-height: auto;
+  background: transparent;
+}
+
 .shell {
   width: min(1080px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 32px 0 48px;
+}
+
+.shell.widget-embed-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .masthead {
@@ -39,6 +51,10 @@ body {
   gap: 20px;
   align-items: end;
   margin-bottom: 24px;
+}
+
+.masthead.is-hidden {
+  display: none;
 }
 
 .eyebrow {
@@ -340,6 +356,11 @@ input[type="checkbox"] {
   opacity: 0.62;
 }
 
+.calendar-date.is-closed {
+  opacity: 0.52;
+  background: rgba(87, 101, 95, 0.12);
+}
+
 .calendar-number {
   font-size: 1.45rem;
   font-weight: 700;
@@ -385,12 +406,54 @@ input[type="checkbox"] {
   gap: 10px;
 }
 
+.hours-editor {
+  border-top: 1px solid rgba(29, 42, 36, 0.08);
+  padding-top: 14px;
+}
+
+.hours-grid,
+.admin-slot-list,
+.booking-calendar-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.hours-row {
+  display: grid;
+  grid-template-columns: 64px 88px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.hours-label {
+  font-weight: 700;
+}
+
 .widget-layout {
   align-items: start;
 }
 
 .widget-calendar-panel {
   overflow: hidden;
+}
+
+body.widget-embed #app {
+  gap: 0;
+}
+
+body.widget-embed .layout {
+  gap: 0;
+}
+
+body.widget-embed .widget-layout {
+  grid-template-columns: 1fr;
+}
+
+body.widget-embed .widget-calendar-panel {
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .widget-modal-backdrop {
@@ -411,6 +474,16 @@ input[type="checkbox"] {
   border: 1px solid rgba(29, 42, 36, 0.12);
   background: rgba(255, 250, 244, 0.96);
   box-shadow: 0 22px 80px rgba(29, 42, 36, 0.18);
+}
+
+.admin-booking-modal {
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.booking-row {
+  padding-top: 10px;
+  border-top: 1px solid rgba(29, 42, 36, 0.08);
 }
 
 .entity-select {
@@ -477,6 +550,16 @@ input[type="checkbox"] {
   display: grid;
   gap: 8px;
   justify-items: start;
+}
+
+@media (max-width: 780px) {
+  .hours-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hours-label {
+    grid-column: 1 / -1;
+  }
 }
 
 .empty {

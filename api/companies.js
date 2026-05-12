@@ -10,9 +10,11 @@ import {
   deleteSeatCount,
   sanitizeCompanyInput,
   sanitizeEstablishmentInput,
+  sanitizeOpeningHoursInput,
   sanitizeSeatCountInput,
   updateCompany,
   updateEstablishment,
+  updateOpeningHours,
   updateSeatCount,
 } from "../lib/companies.js";
 import { ensureSchema } from "../lib/db.js";
@@ -124,6 +126,18 @@ export default async function handler(request, response) {
     }
 
     sendJson(response, 200, { message: "Selected establishments deleted." });
+    return;
+  }
+
+  if (action === "updateOpeningHours") {
+    const input = sanitizeOpeningHoursInput(body);
+    if (input.error) {
+      sendJson(response, 400, { error: input.error });
+      return;
+    }
+
+    await updateOpeningHours(body.establishmentId, input.openingHours);
+    sendJson(response, 200, { message: "Opening hours updated." });
     return;
   }
 
