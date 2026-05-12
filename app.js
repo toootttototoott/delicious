@@ -700,6 +700,7 @@ function renderWidgetSetupPage() {
   const establishments = getWidgetSetupEstablishments();
   const seatCounts = getWidgetSetupSeatCounts();
   const widgetUrl = getWidgetUrl();
+  const widgetOrigin = widgetUrl ? new URL(widgetUrl).origin : "";
   const iframeSnippet = `<iframe
   src="${widgetUrl}"
   data-booking-widget
@@ -709,7 +710,13 @@ function renderWidgetSetupPage() {
 ></iframe>
 <script>
   (function () {
+    var widgetOrigin = ${JSON.stringify(widgetOrigin)};
+
     function resizeBookingWidget(event) {
+      if (widgetOrigin && event.origin !== widgetOrigin) {
+        return;
+      }
+
       if (!event.data || event.data.type !== "booking-widget:height") {
         return;
       }
