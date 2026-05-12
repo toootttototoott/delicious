@@ -66,6 +66,7 @@ let widgetLiveRefreshHandle = null;
 let adminLiveRefreshHandle = null;
 let widgetRefreshInFlight = false;
 let adminRefreshInFlight = false;
+let widgetHeightSyncHandle = null;
 
 document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
@@ -117,6 +118,10 @@ window.addEventListener("popstate", () => {
 
   syncWidgetFromLocation();
   render();
+});
+
+window.addEventListener("resize", () => {
+  scheduleWidgetHeightSync();
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -457,6 +462,7 @@ function render() {
   const topnav = document.querySelector(".topnav");
   topnav.innerHTML = renderTopnav();
   app.innerHTML = (routes.get(location.pathname) ?? renderLoginPage)();
+  scheduleWidgetHeightSync();
 }
 
 function applyRouteChrome() {
@@ -680,7 +686,32 @@ function renderWidgetSetupPage() {
   const establishments = getWidgetSetupEstablishments();
   const seatCounts = getWidgetSetupSeatCounts();
   const widgetUrl = getWidgetUrl();
-  const iframeSnippet = `<iframe src="${widgetUrl}" style="width:100%;min-height:900px;border:0;" loading="lazy"></iframe>`;
+  const iframeSnippet = `<iframe
+  src="${widgetUrl}"
+  data-booking-widget
+  style="width:100%;height:640px;border:0;display:block;overflow:hidden"
+  loading="lazy"
+  scrolling="no"
+></iframe>
+<script>
+  (function () {
+    function resizeBookingWidget(event) {
+      if (!event.data || event.data.type !== "booking-widget:height") {
+        return;
+      }
+
+      var frames = document.querySelectorAll("iframe[data-booking-widget]");
+      for (var i = 0; i < frames.length; i += 1) {
+        var frame = frames[i];
+        if (frame.contentWindow === event.source) {
+          frame.style.height = Math.max(320, Number(event.data.height) || 0) + "px";
+        }
+      }
+    }
+
+    window.addEventListener("message", resizeBookingWidget);
+  })();
+</script>`;
 
   return `
     <section class="layout">
@@ -2554,6 +2585,44 @@ function syncLiveRefresh() {
     clearInterval(adminLiveRefreshHandle);
     adminLiveRefreshHandle = null;
   }
+}
+
+function scheduleWidgetHeightSync() {
+  if (location.pathname !== "/widget") {
+    return;
+  }
+
+  if (widgetHeightSyncHandle) {
+    cancelAnimationFrame(widgetHeightSyncHandle);
+  }
+
+  widgetHeightSyncHandle = requestAnimationFrame(() => {
+    widgetHeightSyncHandle = null;
+    postWidgetHeightToParent();
+  });
+}
+
+function postWidgetHeightToParent() {
+  if (location.pathname !== "/widget" || window.parent === window) {
+    return;
+  }
+
+  const root = document.querySelector(".widget-theme-root") ?? document.querySelector("#app");
+  const height = Math.ceil(
+    Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+      root?.scrollHeight ?? 0,
+    ),
+  );
+
+  window.parent.postMessage(
+    {
+      type: "booking-widget:height",
+      height,
+    },
+    "*",
+  );
 }
 
 function isSettingsInputActive() {
