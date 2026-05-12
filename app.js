@@ -1478,41 +1478,19 @@ function renderWidgetCalendar() {
     const date = toDateString(year, monthIndex, day);
     const availability = availabilityByDate.get(date);
     const isSelected = state.widget.selectedDate === date;
-    const className = availability?.isOpen
-      ? availability.remaining > 0
-        ? "has-availability"
-        : "is-full"
-      : "is-closed";
-    const rawSeatLoad = !availability?.isOpen
-      ? 0
-      : availability.capacity > 0
-        ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
-        : 0;
-    const seatLoad = curveSeatLoad(rawSeatLoad);
-    const caption = !availability
-      ? "Check"
-      : !availability.isOpen
-        ? "Closed"
-        : rawSeatLoad === 0
-          ? "Open"
-          : rawSeatLoad < 0.35
-            ? "Filling"
-            : rawSeatLoad < 0.75
-              ? "Busy"
-              : rawSeatLoad < 1
-                ? "Nearly full"
-                : "Full";
+    const presentation = getCalendarDayPresentation(availability);
     cells.push(`
       <button
         type="button"
-        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
+        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${presentation.className}"
         data-action="selectWidgetDate"
         data-date="${date}"
-        style="--seat-load:${seatLoad.toFixed(3)}"
+        data-fullness="${presentation.status}"
+        style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
         ${availability?.isOpen ? "" : "disabled"}
       >
         <span class="calendar-number">${day}</span>
-        <span class="calendar-caption">${caption}</span>
+        <span class="calendar-caption">${presentation.caption}</span>
       </button>
     `);
   }
@@ -1545,41 +1523,19 @@ function renderAdminCalendar() {
     const date = toDateString(year, monthIndex, day);
     const availability = availabilityByDate.get(date);
     const isSelected = state.adminCalendar.selectedDate === date;
-    const className = availability?.isOpen
-      ? availability.remaining > 0
-        ? "has-availability"
-        : "is-full"
-      : "is-closed";
-    const rawSeatLoad = !availability?.isOpen
-      ? 0
-      : availability.capacity > 0
-        ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
-        : 0;
-    const seatLoad = curveSeatLoad(rawSeatLoad);
-    const caption = !availability
-      ? "Check"
-      : !availability.isOpen
-        ? "Closed"
-        : rawSeatLoad === 0
-          ? "Open"
-          : rawSeatLoad < 0.35
-            ? "Filling"
-            : rawSeatLoad < 0.75
-              ? "Busy"
-              : rawSeatLoad < 1
-                ? "Nearly full"
-                : "Full";
+    const presentation = getCalendarDayPresentation(availability);
 
     cells.push(`
       <button
         type="button"
-        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${className}"
+        class="calendar-cell calendar-date ${isSelected ? "selected" : ""} ${presentation.className}"
         data-action="selectAdminDate"
         data-date="${date}"
-        style="--seat-load:${seatLoad.toFixed(3)}"
+        data-fullness="${presentation.status}"
+        style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
       >
         <span class="calendar-number">${day}</span>
-        <span class="calendar-caption">${caption}</span>
+        <span class="calendar-caption">${presentation.caption}</span>
       </button>
     `);
   }
@@ -3295,6 +3251,89 @@ function todayString() {
 function curveSeatLoad(value) {
   const clamped = Math.max(0, Math.min(1, Number(value) || 0));
   return Math.sqrt(clamped);
+}
+
+function getCalendarDayPresentation(availability) {
+  if (!availability) {
+    return {
+      caption: "Check",
+      className: "is-closed status-unavailable",
+      rawSeatLoad: 0,
+      seatLoad: 0,
+      status: "unavailable",
+    };
+  }
+
+  if (!availability.isOpen) {
+    return {
+      caption: "Closed",
+      className: "is-closed status-closed",
+      rawSeatLoad: 0,
+      seatLoad: 0,
+      status: "closed",
+    };
+  }
+
+  const hoursLabel = getCalendarDayHoursLabel(availability);
+  const rawSeatLoad =
+    availability.capacity > 0
+      ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
+      : 0;
+  const seatLoad = curveSeatLoad(rawSeatLoad);
+
+  if (availability.remaining <= 0 || rawSeatLoad >= 1) {
+    return {
+      caption: hoursLabel,
+      className: "is-full status-full",
+      rawSeatLoad,
+      seatLoad,
+      status: "full",
+    };
+  }
+
+  if (rawSeatLoad === 0) {
+    return {
+      caption: hoursLabel,
+      className: "has-availability status-open",
+      rawSeatLoad,
+      seatLoad,
+      status: "open",
+    };
+  }
+
+  if (rawSeatLoad < 0.35) {
+    return {
+      caption: hoursLabel,
+      className: "has-availability status-filling",
+      rawSeatLoad,
+      seatLoad,
+      status: "filling",
+    };
+  }
+
+  if (rawSeatLoad < 0.75) {
+    return {
+      caption: hoursLabel,
+      className: "has-availability status-busy",
+      rawSeatLoad,
+      seatLoad,
+      status: "busy",
+    };
+  }
+
+  return {
+    caption: hoursLabel,
+    className: "has-availability status-nearly-full",
+    rawSeatLoad,
+    seatLoad,
+    status: "nearly-full",
+  };
+}
+
+function getCalendarDayHoursLabel(availability) {
+  const openTime = String(availability?.openTime ?? "").trim();
+  const closeTime = String(availability?.closeTime ?? "").trim();
+  return openTime && closeTime ? `${openTime}-${closeTime}` : "Open";
 }
 
 function escapeHtml(value) {
