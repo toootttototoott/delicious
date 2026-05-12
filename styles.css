@@ -27,11 +27,13 @@ body {
   color: var(--text);
 }
 
+html.route-widget body,
 body.widget-embed {
   min-height: auto;
   background: transparent;
 }
 
+html.route-login body,
 body.login-standalone {
   display: grid;
   place-items: center;
@@ -44,6 +46,7 @@ body.login-standalone {
   padding: 32px 0 48px;
 }
 
+html.route-widget .shell,
 .shell.widget-embed-shell {
   width: 100%;
   max-width: none;
@@ -51,6 +54,7 @@ body.login-standalone {
   padding: 0;
 }
 
+html.route-login .shell,
 .shell.login-shell {
   width: min(880px, 100%);
   margin: 0;
@@ -66,6 +70,11 @@ body.login-standalone {
 }
 
 .masthead.is-hidden {
+  display: none;
+}
+
+html.route-widget .masthead,
+html.route-login .masthead {
   display: none;
 }
 
@@ -519,18 +528,22 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
+html.route-widget #app,
 body.widget-embed #app {
   gap: 0;
 }
 
+html.route-widget .layout,
 body.widget-embed .layout {
   gap: 0;
 }
 
+html.route-widget .widget-layout,
 body.widget-embed .widget-layout {
   grid-template-columns: 1fr;
 }
 
+html.route-widget .widget-calendar-panel,
 body.widget-embed .widget-calendar-panel {
   border-radius: 0;
   border: 0;

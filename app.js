@@ -2688,13 +2688,22 @@ function postWidgetHeightToParent() {
   }
 
   const root = document.querySelector(".widget-theme-root") ?? document.querySelector("#app");
-  const height = Math.ceil(
+  const rootStyles = root ? window.getComputedStyle(root) : null;
+  const rootMargins = rootStyles
+    ? (Number.parseFloat(rootStyles.marginTop) || 0) + (Number.parseFloat(rootStyles.marginBottom) || 0)
+    : 0;
+  const measuredHeight = root
+    ? Math.ceil(root.getBoundingClientRect().height + rootMargins)
+    : 0;
+  const fallbackHeight = Math.ceil(
     Math.max(
-      document.documentElement.scrollHeight,
-      document.body.scrollHeight,
-      root?.scrollHeight ?? 0,
+      document.documentElement.offsetHeight,
+      document.body.offsetHeight,
+      document.documentElement.clientHeight,
+      document.body.clientHeight,
     ),
   );
+  const height = root ? measuredHeight : fallbackHeight;
 
   window.parent.postMessage(
     {
