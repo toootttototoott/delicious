@@ -30,7 +30,7 @@ export default async function handler(request, response) {
   }
 
   if (action === "create") {
-    const input = sanitizeUserInput(body, { passwordRequired: true });
+    const input = await sanitizeUserInput(body, { passwordRequired: true });
     if (input.error) {
       sendJson(response, 400, { error: input.error });
       return;
@@ -66,7 +66,7 @@ export default async function handler(request, response) {
   }
 
   if (action === "update") {
-    const input = sanitizeUserInput(body, { passwordRequired: false });
+    const input = await sanitizeUserInput(body, { passwordRequired: false });
     if (input.error) {
       sendJson(response, 400, { error: input.error });
       return;

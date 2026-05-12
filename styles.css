@@ -271,6 +271,51 @@ input[type="checkbox"] {
   flex-direction: column;
 }
 
+.calendar-grid,
+.times-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.calendar-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 18px;
+}
+
+.calendar-day,
+.time-pill {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(29, 42, 36, 0.12);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text);
+}
+
+.calendar-day.selected,
+.time-pill.selected {
+  border-color: var(--accent-dark);
+  background: rgba(200, 106, 60, 0.14);
+}
+
+.time-pill {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.times-grid {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  margin: 16px 0 20px;
+}
+
+.widget-form button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .entity-select {
   padding-top: 4px;
 }

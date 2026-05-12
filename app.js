@@ -3,10 +3,13 @@ const state = {
   users: [],
   companies: [],
   userCount: 0,
+  widgetCatalog: [],
+  widgetAvailability: [],
   statuses: {
     auth: null,
     users: null,
     companies: null,
+    widget: null,
   },
   filters: {
     users: "",
@@ -18,12 +21,20 @@ const state = {
   selectedSeatCountIds: new Set(),
   userForm: createEmptyUserForm(),
   companyForm: createEmptyCompanyForm(),
+  widget: {
+    companyId: "",
+    establishmentId: "",
+    seatCountId: "",
+    selectedDate: "",
+    selectedTime: "",
+  },
 };
 
 const routes = new Map([
   ["/", renderLoginPage],
   ["/login", renderLoginPage],
   ["/settings", renderSettingsPage],
+  ["/widget", renderWidgetPage],
 ]);
 
 document.addEventListener("click", (event) => {
@@ -63,6 +74,12 @@ document.addEventListener("submit", async (event) => {
   if (event.target.matches("[data-company-form]")) {
     event.preventDefault();
     await handleCompanySubmit(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-form]")) {
+    event.preventDefault();
+    await handleWidgetBooking(event.target);
   }
 });
 
@@ -79,7 +96,7 @@ document.addEventListener("input", (event) => {
   }
 });
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   if (event.target.matches("[data-user-select]")) {
     toggleSelection(state.selectedUserIds, event.target.value, event.target.checked);
     render();
@@ -113,14 +130,44 @@ document.addEventListener("change", (event) => {
   if (event.target.matches("[data-company-select-all]")) {
     setVisibleSelection("companies", event.target.checked);
     render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-company]")) {
+    state.widget.companyId = event.target.value;
+    syncWidgetSelections();
+    await refreshWidgetAvailability();
+    render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-establishment]")) {
+    state.widget.establishmentId = event.target.value;
+    syncWidgetSelections();
+    await refreshWidgetAvailability();
+    render();
+    return;
+  }
+
+  if (event.target.matches("[data-widget-seat-count]")) {
+    state.widget.seatCountId = event.target.value;
+    syncWidgetSelections();
+    await refreshWidgetAvailability();
+    render();
   }
 });
 
 async function boot() {
-  await loadSession();
+  const results = await Promise.allSettled([loadSession(), loadWidgetCatalog()]);
+
+  if (results[1]?.status === "rejected") {
+    setStatus("widget", "error", "Widget data could not be loaded.");
+  }
+
   if (location.pathname === "/") {
     history.replaceState({}, "", "/login");
   }
+
   render();
 }
 
@@ -132,6 +179,19 @@ async function loadSession() {
   state.companies = payload.companies ?? [];
   state.userCount = Number(payload.userCount ?? 0);
   pruneSelections();
+}
+
+async function loadWidgetCatalog() {
+  const response = await fetch("/api/widget?action=config");
+  const payload = await readApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Widget configuration failed.");
+  }
+
+  state.widgetCatalog = payload.catalog ?? [];
+  syncWidgetSelections();
+  await refreshWidgetAvailability();
 }
 
 function navigate(pathname) {
@@ -159,8 +219,10 @@ function render() {
 
 function renderTopnav() {
   const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
+
   return `
     <a href="/login" data-link>Display</a>
+    <a href="/widget" data-link>Widget View</a>
     ${canViewSettings ? '<a href="/settings" data-link>Settings</a>' : ""}
   `;
 }
@@ -213,7 +275,7 @@ function renderSettingsPage() {
         <aside class="panel side">
           <p class="eyebrow">Security</p>
           <h3>Encrypted storage</h3>
-          <p class="meta">Names and email are encrypted before being written to Cockroach. Passwords are stored as password hashes, not as reversible text.</p>
+          <p class="meta">Names, emails, and booking customer details are encrypted before being written to Cockroach. Passwords are stored as password hashes, not as reversible text.</p>
         </aside>
       </section>
     `;
@@ -239,7 +301,7 @@ function renderSettingsPage() {
           <div>
             <p class="eyebrow">Admin session</p>
             <h2>Settings</h2>
-            <p class="meta">Manage users, companies, establishments, and seat counts.</p>
+            <p class="meta">Manage users, companies, establishments, seat-count calendars, and role assignments.</p>
           </div>
           <div class="stack-inline">
             ${renderSessionSummary(true)}
@@ -258,7 +320,7 @@ function renderSettingsPage() {
         <div class="list-toolbar">
           <input
             type="search"
-            placeholder="Search users, emails, auth, company"
+            placeholder="Search users, emails, auth, company, establishment"
             value="${escapeHtml(state.filters.users)}"
             data-user-search
           />
@@ -322,10 +384,114 @@ function renderSettingsPage() {
   `;
 }
 
+function renderWidgetPage() {
+  const companies = state.widgetCatalog;
+  const establishments = getWidgetEstablishments();
+  const seatCounts = getWidgetSeatCounts();
+  const activeDate = state.widget.selectedDate
+    ? state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)
+    : null;
+
+  return `
+    <section class="layout">
+      <article class="panel wide">
+        <p class="eyebrow">Widget view</p>
+        <h2>Booking calendar</h2>
+        <p class="meta">Choose a seat-count calendar, click a day, choose a time, then submit the booking.</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="widget-company">Company</label>
+            <select id="widget-company" data-widget-company>
+              ${companies
+                .map(
+                  (company) => `
+                    <option value="${company.id}" ${state.widget.companyId === company.id ? "selected" : ""}>
+                      ${escapeHtml(company.name)}
+                    </option>
+                  `,
+                )
+                .join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label for="widget-establishment">Establishment</label>
+            <select id="widget-establishment" data-widget-establishment>
+              ${establishments
+                .map(
+                  (establishment) => `
+                    <option value="${establishment.id}" ${state.widget.establishmentId === establishment.id ? "selected" : ""}>
+                      ${escapeHtml(establishment.name)}
+                    </option>
+                  `,
+                )
+                .join("")}
+            </select>
+          </div>
+          <div class="field full">
+            <label for="widget-seat-count">Seat-count calendar</label>
+            <select id="widget-seat-count" data-widget-seat-count>
+              ${seatCounts
+                .map(
+                  (seatCount) => `
+                    <option value="${seatCount.id}" ${state.widget.seatCountId === seatCount.id ? "selected" : ""}>
+                      ${escapeHtml(seatCount.label)}
+                    </option>
+                  `,
+                )
+                .join("")}
+            </select>
+          </div>
+        </div>
+        ${renderStatus("widget")}
+        <div class="calendar-grid">
+          ${renderWidgetDates()}
+        </div>
+      </article>
+      <aside class="panel side">
+        <p class="eyebrow">Booking details</p>
+        <h3>${activeDate ? activeDate.date : "Choose a day"}</h3>
+        <div class="times-grid">
+          ${renderWidgetTimes(activeDate)}
+        </div>
+        <form class="stack widget-form" data-widget-form>
+          <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
+          <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
+          <input type="hidden" name="bookingTime" value="${escapeHtml(state.widget.selectedTime)}" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="booking-first-name">First name</label>
+              <input id="booking-first-name" name="firstName" required />
+            </div>
+            <div class="field">
+              <label for="booking-last-name">Last name</label>
+              <input id="booking-last-name" name="lastName" required />
+            </div>
+            <div class="field full">
+              <label for="booking-email">Email</label>
+              <input id="booking-email" name="email" type="email" required />
+            </div>
+            <div class="field full">
+              <label for="booking-phone">Phone</label>
+              <input id="booking-phone" name="phone" required />
+            </div>
+            <div class="field full">
+              <label for="booking-notes">Notes</label>
+              <input id="booking-notes" name="notes" />
+            </div>
+          </div>
+          <button type="submit" ${state.widget.selectedTime ? "" : "disabled"}>Book selected slot</button>
+        </form>
+      </aside>
+    </section>
+  `;
+}
+
 function renderSessionSummary(compact = false) {
   if (!state.session) {
     return `<p class="meta">No active session.</p>`;
   }
+
+  const establishment = getEstablishmentLabel(state.session.establishmentId);
 
   if (compact) {
     return `
@@ -334,6 +500,7 @@ function renderSessionSummary(compact = false) {
           ${escapeHtml(state.session.firstName)} ${escapeHtml(state.session.lastName)}
         </div>
         <p class="meta">${escapeHtml(state.session.email)} | ${escapeHtml(state.session.authLevel)}</p>
+        ${establishment ? `<p class="meta">${escapeHtml(establishment)}</p>` : ""}
         <button type="button" class="ghost-button" data-action="logout">Sign out</button>
       </div>
     `;
@@ -345,6 +512,7 @@ function renderSessionSummary(compact = false) {
         Signed in as <strong>${escapeHtml(state.session.firstName)} ${escapeHtml(state.session.lastName)}</strong>
       </div>
       <p class="meta">${escapeHtml(state.session.email)} | ${escapeHtml(state.session.authLevel)}</p>
+      ${establishment ? `<p class="meta">${escapeHtml(establishment)}</p>` : ""}
       <button type="button" class="ghost-button" data-action="logout">Sign out</button>
     </div>
   `;
@@ -357,6 +525,17 @@ function renderUserForm(lockAdminLevel) {
       (company) => `
         <option value="${company.id}" ${state.userForm.companyId === company.id ? "selected" : ""}>
           ${escapeHtml(company.name)}
+        </option>
+      `,
+    ),
+  ].join("");
+
+  const establishmentOptions = [
+    '<option value="">No establishment</option>',
+    ...getAllEstablishments().map(
+      (establishment) => `
+        <option value="${establishment.id}" ${state.userForm.establishmentId === establishment.id ? "selected" : ""}>
+          ${escapeHtml(establishment.companyName)} | ${escapeHtml(establishment.name)}
         </option>
       `,
     ),
@@ -386,12 +565,18 @@ function renderUserForm(lockAdminLevel) {
           <select id="authLevel" name="authLevel" ${lockAdminLevel ? "disabled" : ""}>
             <option value="admin" ${state.userForm.authLevel === "admin" ? "selected" : ""}>Admin</option>
             <option value="user" ${state.userForm.authLevel === "user" ? "selected" : ""}>User</option>
+            <option value="manager" ${state.userForm.authLevel === "manager" ? "selected" : ""}>Manager</option>
+            <option value="staff" ${state.userForm.authLevel === "staff" ? "selected" : ""}>Staff</option>
           </select>
           ${lockAdminLevel ? '<input type="hidden" name="authLevel" value="admin" />' : ""}
         </div>
-        <div class="field full">
+        <div class="field">
           <label for="companyId">Company</label>
           <select id="companyId" name="companyId">${companyOptions}</select>
+        </div>
+        <div class="field">
+          <label for="establishmentId">Establishment</label>
+          <select id="establishmentId" name="establishmentId">${establishmentOptions}</select>
         </div>
       </div>
       <div class="stack-inline">
@@ -427,6 +612,9 @@ function renderCompanyForm() {
 
 function renderUsers() {
   const companiesById = new Map(state.companies.map((company) => [company.id, company.name]));
+  const establishmentsById = new Map(
+    getAllEstablishments().map((establishment) => [establishment.id, establishment]),
+  );
   const users = getFilteredUsers();
 
   if (!users.length) {
@@ -436,6 +624,10 @@ function renderUsers() {
   return users
     .map((user) => {
       const companyName = user.companyId ? companiesById.get(user.companyId) ?? "Unknown company" : "No company";
+      const establishment = user.establishmentId
+        ? establishmentsById.get(user.establishmentId)?.name ?? "Unknown establishment"
+        : "No establishment";
+
       return `
         <article class="entity-card">
           <label class="checkbox entity-select">
@@ -453,6 +645,7 @@ function renderUsers() {
                 <strong>${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</strong>
                 <p class="meta">${escapeHtml(user.email)}</p>
                 <p class="meta">${escapeHtml(user.authLevel)} | ${escapeHtml(companyName)}</p>
+                <p class="meta">${escapeHtml(establishment)}</p>
               </div>
               <div class="stack-inline">
                 <button type="button" class="ghost-button" data-action="editUser" data-user-id="${user.id}">Edit</button>
@@ -503,7 +696,7 @@ function renderCompanies() {
               ? `<div class="subsection">
                   <p class="eyebrow">Users</p>
                   <div class="chip-row">${linkedUsers
-                    .map((user) => `<span class="chip">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</span>`)
+                    .map((user) => `<span class="chip">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)} · ${escapeHtml(user.authLevel)}</span>`)
                     .join("")}</div>
                 </div>`
               : ""
@@ -596,16 +789,72 @@ function renderEstablishment(company, establishment) {
                   `,
                 )
                 .join("")
-            : '<span class="meta">No seat counts yet.</span>'
+            : '<span class="meta">No seat-count calendars yet.</span>'
         }
       </div>
     </div>
   `;
 }
 
+function renderWidgetDates() {
+  if (!state.widgetAvailability.length) {
+    return '<div class="empty">No seat-count calendars available yet.</div>';
+  }
+
+  return state.widgetAvailability
+    .map((date) => {
+      const availableCount = date.slots.filter((slot) => slot.available).length;
+      return `
+        <button
+          type="button"
+          class="calendar-day ${state.widget.selectedDate === date.date ? "selected" : ""}"
+          data-action="selectWidgetDate"
+          data-date="${date.date}"
+        >
+          <strong>${date.date}</strong>
+          <span>${availableCount} slots free</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderWidgetTimes(activeDate) {
+  if (!activeDate) {
+    return '<div class="empty">Choose a day to see times.</div>';
+  }
+
+  return activeDate.slots
+    .map((slot) => `
+      <button
+        type="button"
+        class="time-pill ${state.widget.selectedTime === slot.time ? "selected" : ""}"
+        data-action="selectWidgetTime"
+        data-time="${slot.time}"
+        ${slot.available ? "" : "disabled"}
+      >
+        ${slot.time}
+      </button>
+    `)
+    .join("");
+}
+
 async function handleAction(action, dataset) {
   if (action === "logout") {
     await logout();
+    return;
+  }
+
+  if (action === "selectWidgetDate") {
+    state.widget.selectedDate = dataset.date;
+    state.widget.selectedTime = "";
+    render();
+    return;
+  }
+
+  if (action === "selectWidgetTime") {
+    state.widget.selectedTime = dataset.time;
+    render();
     return;
   }
 
@@ -638,6 +887,7 @@ async function handleAction(action, dataset) {
       password: "",
       authLevel: user.authLevel,
       companyId: user.companyId ?? "",
+      establishmentId: user.establishmentId ?? "",
     };
     clearStatus("users");
     render();
@@ -661,11 +911,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/users",
-      { action: "bulkDelete", userIds: Array.from(state.selectedUserIds) },
-      "users",
-    );
+    await postJson("/api/users", { action: "bulkDelete", userIds: Array.from(state.selectedUserIds) }, "users");
     state.selectedUserIds.clear();
     await refreshAdminState();
     setStatus("users", "success", "Selected users deleted.");
@@ -693,11 +939,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "deleteCompany", companyId: dataset.companyId },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "deleteCompany", companyId: dataset.companyId }, "companies");
     state.selectedCompanyIds.delete(dataset.companyId);
     await refreshAdminState();
     setStatus("companies", "success", "Company deleted.");
@@ -709,11 +951,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "bulkDeleteCompanies", companyIds: Array.from(state.selectedCompanyIds) },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "bulkDeleteCompanies", companyIds: Array.from(state.selectedCompanyIds) }, "companies");
     state.selectedCompanyIds.clear();
     await refreshAdminState();
     setStatus("companies", "success", "Selected companies deleted.");
@@ -727,10 +965,7 @@ async function handleAction(action, dataset) {
 
     await postJson(
       "/api/companies",
-      {
-        action: "bulkDeleteEstablishments",
-        establishmentIds: Array.from(state.selectedEstablishmentIds),
-      },
+      { action: "bulkDeleteEstablishments", establishmentIds: Array.from(state.selectedEstablishmentIds) },
       "companies",
     );
     state.selectedEstablishmentIds.clear();
@@ -746,10 +981,7 @@ async function handleAction(action, dataset) {
 
     await postJson(
       "/api/companies",
-      {
-        action: "bulkDeleteSeatCounts",
-        seatCountIds: Array.from(state.selectedSeatCountIds),
-      },
+      { action: "bulkDeleteSeatCounts", seatCountIds: Array.from(state.selectedSeatCountIds) },
       "companies",
     );
     state.selectedSeatCountIds.clear();
@@ -764,11 +996,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "createEstablishment", companyId: dataset.companyId, name },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "createEstablishment", companyId: dataset.companyId, name }, "companies");
     await refreshAdminState();
     setStatus("companies", "success", "Establishment created.");
     return;
@@ -788,12 +1016,7 @@ async function handleAction(action, dataset) {
 
     await postJson(
       "/api/companies",
-      {
-        action: "updateEstablishment",
-        establishmentId: dataset.establishmentId,
-        companyId: dataset.companyId,
-        name,
-      },
+      { action: "updateEstablishment", establishmentId: dataset.establishmentId, companyId: dataset.companyId, name },
       "companies",
     );
     await refreshAdminState();
@@ -806,11 +1029,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "deleteEstablishment", establishmentId: dataset.establishmentId },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "deleteEstablishment", establishmentId: dataset.establishmentId }, "companies");
     state.selectedEstablishmentIds.delete(dataset.establishmentId);
     await refreshAdminState();
     setStatus("companies", "success", "Establishment deleted.");
@@ -823,13 +1042,9 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "createSeatCount", establishmentId: dataset.establishmentId, seatCount },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "createSeatCount", establishmentId: dataset.establishmentId, seatCount }, "companies");
     await refreshAdminState();
-    setStatus("companies", "success", "Seat count created.");
+    setStatus("companies", "success", "Seat-count calendar created.");
     return;
   }
 
@@ -841,12 +1056,7 @@ async function handleAction(action, dataset) {
 
     await postJson(
       "/api/companies",
-      {
-        action: "updateSeatCount",
-        seatCountId: dataset.seatCountId,
-        establishmentId: dataset.establishmentId,
-        seatCount,
-      },
+      { action: "updateSeatCount", seatCountId: dataset.seatCountId, establishmentId: dataset.establishmentId, seatCount },
       "companies",
     );
     await refreshAdminState();
@@ -859,11 +1069,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    await postJson(
-      "/api/companies",
-      { action: "deleteSeatCount", seatCountId: dataset.seatCountId },
-      "companies",
-    );
+    await postJson("/api/companies", { action: "deleteSeatCount", seatCountId: dataset.seatCountId }, "companies");
     state.selectedSeatCountIds.delete(dataset.seatCountId);
     await refreshAdminState();
     setStatus("companies", "success", "Seat count deleted.");
@@ -924,6 +1130,21 @@ async function handleCompanySubmit(form) {
   setStatus("companies", "success", data.message ?? "Company saved.");
 }
 
+async function handleWidgetBooking(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+
+  if (!payload.bookingDate || !payload.bookingTime) {
+    setStatus("widget", "error", "Choose a day and time before booking.");
+    return;
+  }
+
+  const data = await postJson("/api/widget", payload, "widget");
+  await refreshWidgetAvailability();
+  form.reset();
+  state.widget.selectedTime = "";
+  setStatus("widget", "success", data.message ?? "Booking confirmed.");
+}
+
 async function logout() {
   await fetch("/api/logout", { method: "POST" });
   state.session = null;
@@ -941,8 +1162,40 @@ async function logout() {
 }
 
 async function refreshAdminState() {
-  await loadSession();
+  await Promise.all([loadSession(), loadWidgetCatalog()]);
   render();
+}
+
+async function refreshWidgetAvailability() {
+  if (!state.widget.seatCountId) {
+    state.widgetAvailability = [];
+    state.widget.selectedDate = "";
+    state.widget.selectedTime = "";
+    return;
+  }
+
+  const fromDate = todayString();
+  const response = await fetch(
+    `/api/widget?action=availability&seatCountId=${encodeURIComponent(state.widget.seatCountId)}&fromDate=${encodeURIComponent(fromDate)}&days=14`,
+  );
+  const data = await readApiResponse(response);
+
+  if (!response.ok) {
+    state.widgetAvailability = [];
+    setStatus("widget", "error", data.error ?? "Availability could not be loaded.");
+    return;
+  }
+
+  state.widgetAvailability = data.dates ?? [];
+  if (!state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)) {
+    state.widget.selectedDate = state.widgetAvailability[0]?.date ?? "";
+    state.widget.selectedTime = "";
+  }
+
+  const selectedDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate);
+  if (selectedDate && !selectedDate.slots.some((slot) => slot.time === state.widget.selectedTime && slot.available)) {
+    state.widget.selectedTime = "";
+  }
 }
 
 async function postJson(url, payload, scope) {
@@ -982,6 +1235,7 @@ function createEmptyUserForm() {
     password: "",
     authLevel: "user",
     companyId: "",
+    establishmentId: "",
   };
 }
 
@@ -1010,6 +1264,7 @@ function renderStatus(scope) {
 function getFilteredUsers() {
   const term = state.filters.users.trim().toLowerCase();
   const companiesById = new Map(state.companies.map((company) => [company.id, company.name.toLowerCase()]));
+  const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment.name.toLowerCase()]));
 
   if (!term) {
     return state.users;
@@ -1022,6 +1277,7 @@ function getFilteredUsers() {
       user.email,
       user.authLevel,
       companiesById.get(user.companyId) ?? "",
+      establishmentsById.get(user.establishmentId) ?? "",
     ]
       .join(" ")
       .toLowerCase();
@@ -1091,15 +1347,75 @@ function pruneSelections() {
   );
 
   state.selectedUserIds = new Set(Array.from(state.selectedUserIds).filter((id) => userIds.has(id)));
-  state.selectedCompanyIds = new Set(
-    Array.from(state.selectedCompanyIds).filter((id) => companyIds.has(id)),
+  state.selectedCompanyIds = new Set(Array.from(state.selectedCompanyIds).filter((id) => companyIds.has(id)));
+  state.selectedEstablishmentIds = new Set(Array.from(state.selectedEstablishmentIds).filter((id) => establishmentIds.has(id)));
+  state.selectedSeatCountIds = new Set(Array.from(state.selectedSeatCountIds).filter((id) => seatCountIds.has(id)));
+}
+
+function getAllEstablishments() {
+  return state.companies.flatMap((company) =>
+    company.establishments.map((establishment) => ({
+      ...establishment,
+      companyName: company.name,
+    })),
   );
-  state.selectedEstablishmentIds = new Set(
-    Array.from(state.selectedEstablishmentIds).filter((id) => establishmentIds.has(id)),
+}
+
+function getEstablishmentLabel(establishmentId) {
+  if (!establishmentId) {
+    return "";
+  }
+
+  const establishment = getAllEstablishments().find((item) => item.id === establishmentId);
+  return establishment ? `${establishment.companyName} | ${establishment.name}` : "";
+}
+
+function syncWidgetSelections() {
+  const companies = state.widgetCatalog;
+  if (!companies.length) {
+    state.widget = {
+      companyId: "",
+      establishmentId: "",
+      seatCountId: "",
+      selectedDate: "",
+      selectedTime: "",
+    };
+    return;
+  }
+
+  if (!companies.some((company) => company.id === state.widget.companyId)) {
+    state.widget.companyId = companies[0].id;
+  }
+
+  const establishments = getWidgetEstablishments();
+  if (!establishments.some((establishment) => establishment.id === state.widget.establishmentId)) {
+    state.widget.establishmentId = establishments[0]?.id ?? "";
+  }
+
+  const seatCounts = getWidgetSeatCounts();
+  if (!seatCounts.some((seatCount) => seatCount.id === state.widget.seatCountId)) {
+    state.widget.seatCountId = seatCounts[0]?.id ?? "";
+    state.widget.selectedDate = "";
+    state.widget.selectedTime = "";
+  }
+}
+
+function getWidgetEstablishments() {
+  const company = state.widgetCatalog.find((item) => item.id === state.widget.companyId);
+  return company?.establishments ?? [];
+}
+
+function getWidgetSeatCounts() {
+  const establishment = getWidgetEstablishments().find(
+    (item) => item.id === state.widget.establishmentId,
   );
-  state.selectedSeatCountIds = new Set(
-    Array.from(state.selectedSeatCountIds).filter((id) => seatCountIds.has(id)),
-  );
+  return establishment?.seatCounts ?? [];
+}
+
+function todayString() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10);
 }
 
 function escapeHtml(value) {
