@@ -84,6 +84,24 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("popstate", () => {
+  if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
+    loadWidgetCatalog().catch(() => {
+      setStatus("widget", "error", "Widget data could not be loaded.");
+    });
+  }
+
+  if (
+    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    state.session?.authLevel === "admin" &&
+    !state.companies.length
+  ) {
+    loadAdminData()
+      .then(() => refreshAdminAvailability())
+      .catch(() => {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      });
+  }
+
   syncWidgetFromLocation();
   render();
 });
@@ -211,19 +229,35 @@ document.addEventListener("change", async (event) => {
 });
 
 async function boot() {
-  const results = await Promise.allSettled([loadSession(), loadWidgetCatalog()]);
+  if (location.pathname === "/") {
+    history.replaceState({}, "", "/login");
+  }
 
-  if (results[1]?.status === "rejected") {
-    setStatus("widget", "error", "Widget data could not be loaded.");
+  const sessionResult = await Promise.allSettled([loadSession()]);
+  if (sessionResult[0]?.status === "rejected") {
+    setStatus("auth", "error", "Session could not be loaded.");
+  }
+
+  if (location.pathname === "/widget") {
+    const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
+    if (widgetResult[0]?.status === "rejected") {
+      setStatus("widget", "error", "Widget data could not be loaded.");
+    }
+  }
+
+  if (
+    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    state.session?.authLevel === "admin"
+  ) {
+    const adminResult = await Promise.allSettled([loadAdminData()]);
+    if (adminResult[0]?.status === "rejected") {
+      setStatus("auth", "error", "Admin data could not be loaded.");
+    }
   }
 
   syncWidgetFromLocation();
   if (state.session?.authLevel === "admin") {
     await refreshAdminAvailability();
-  }
-
-  if (location.pathname === "/") {
-    history.replaceState({}, "", "/login");
   }
 
   render();
@@ -233,9 +267,26 @@ async function loadSession() {
   const response = await fetch("/api/session");
   const payload = await readApiResponse(response);
   state.session = payload.session;
+  state.userCount = Number(payload.userCount ?? 0);
+  if (state.session?.authLevel !== "admin") {
+    state.users = [];
+    state.companies = [];
+  }
+  pruneSelections();
+  syncWidgetSetupSelections();
+  syncAdminCalendarSelections();
+}
+
+async function loadAdminData() {
+  const response = await fetch("/api/admin-data");
+  const payload = await readApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Admin data could not be loaded.");
+  }
+
   state.users = payload.users ?? [];
   state.companies = payload.companies ?? [];
-  state.userCount = Number(payload.userCount ?? 0);
   pruneSelections();
   syncWidgetSetupSelections();
   syncAdminCalendarSelections();
@@ -255,6 +306,32 @@ async function loadWidgetCatalog() {
 
 function navigate(target) {
   history.pushState({}, "", target);
+  if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
+    loadWidgetCatalog()
+      .then(() => {
+        syncWidgetFromLocation();
+        render();
+      })
+      .catch(() => {
+        setStatus("widget", "error", "Widget data could not be loaded.");
+      });
+  }
+
+  if (
+    (location.pathname === "/settings" || location.pathname === "/widget-setup") &&
+    state.session?.authLevel === "admin" &&
+    !state.companies.length
+  ) {
+    loadAdminData()
+      .then(async () => {
+        await refreshAdminAvailability();
+        render();
+      })
+      .catch(() => {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      });
+  }
+
   syncWidgetFromLocation();
   render();
 }
@@ -1875,10 +1952,13 @@ async function logout() {
 }
 
 async function refreshAdminState() {
-  await Promise.all([loadSession(), loadWidgetCatalog()]);
+  await loadSession();
   if (state.session?.authLevel === "admin") {
+    await loadAdminData();
     await refreshAdminAvailability();
   } else {
+    state.users = [];
+    state.companies = [];
     state.adminAvailability = [];
   }
   syncWidgetFromLocation();
