@@ -394,7 +394,7 @@ function renderSettingsPage() {
 }
 
 function renderWidgetSetupPage() {
-  const companies = state.widgetCatalog;
+  const companies = getWidgetSetupCompanies();
   const establishments = getWidgetSetupEstablishments();
   const seatCounts = getWidgetSetupSeatCounts();
   const widgetUrl = getWidgetUrl();
@@ -410,6 +410,7 @@ function renderWidgetSetupPage() {
           <div class="field">
             <label for="setup-company">Company</label>
             <select id="setup-company" data-setup-company>
+              ${!companies.length ? '<option value="">No companies yet</option>' : ""}
               ${companies
                 .map(
                   (company) => `
@@ -424,6 +425,7 @@ function renderWidgetSetupPage() {
           <div class="field">
             <label for="setup-establishment">Establishment</label>
             <select id="setup-establishment" data-setup-establishment>
+              ${!establishments.length ? '<option value="">No establishments yet</option>' : ""}
               ${establishments
                 .map(
                   (establishment) => `
@@ -438,6 +440,7 @@ function renderWidgetSetupPage() {
           <div class="field full">
             <label for="setup-seat-count">Seat-count calendar</label>
             <select id="setup-seat-count" data-setup-seat-count>
+              ${!seatCounts.length ? '<option value="">No seat-count calendars yet</option>' : ""}
               ${seatCounts
                 .map(
                   (seatCount) => `
@@ -451,6 +454,15 @@ function renderWidgetSetupPage() {
           </div>
         </div>
         ${renderStatus("widgetSetup")}
+        ${
+          !companies.length
+            ? '<div class="empty">Create a company first in settings.</div>'
+            : !establishments.length
+              ? '<div class="empty">Create an establishment for this company in settings.</div>'
+              : !seatCounts.length
+                ? '<div class="empty">Create at least one seat count for this establishment in settings.</div>'
+                : ""
+        }
         <div class="setup-output">
           <label>Widget URL</label>
           <div class="copy-row">
@@ -1439,7 +1451,7 @@ function getEstablishmentLabel(establishmentId) {
 }
 
 function syncWidgetSetupSelections() {
-  const companies = state.widgetCatalog;
+  const companies = getWidgetSetupCompanies();
   if (!companies.length) {
     state.widgetSetup = { companyId: "", establishmentId: "", seatCountId: "" };
     return;
@@ -1468,7 +1480,9 @@ function syncWidgetFromLocation() {
     state.widget.seatCountId = seatCountId;
     const seatCount = getSeatCountById(seatCountId);
     if (seatCount) {
-      state.widget.currentMonth = monthKey(todayString());
+      if (!state.widget.currentMonth) {
+        state.widget.currentMonth = monthKey(todayString());
+      }
       refreshWidgetAvailability().then(render);
     } else {
       state.widgetAvailability = [];
@@ -1479,7 +1493,7 @@ function syncWidgetFromLocation() {
 }
 
 function getWidgetSetupEstablishments() {
-  const company = state.widgetCatalog.find((item) => item.id === state.widgetSetup.companyId);
+  const company = getWidgetSetupCompanies().find((item) => item.id === state.widgetSetup.companyId);
   return company?.establishments ?? [];
 }
 
@@ -1509,7 +1523,7 @@ function getSelectedEstablishmentLabel() {
 }
 
 function getSeatCountById(seatCountId) {
-  for (const company of state.widgetCatalog) {
+  for (const company of getWidgetCatalogSource()) {
     for (const establishment of company.establishments) {
       for (const seatCount of establishment.seatCounts) {
         if (seatCount.id === seatCountId) {
@@ -1526,6 +1540,14 @@ function getSeatCountById(seatCountId) {
   }
 
   return null;
+}
+
+function getWidgetSetupCompanies() {
+  return state.companies.length ? state.companies : state.widgetCatalog;
+}
+
+function getWidgetCatalogSource() {
+  return state.widgetCatalog.length ? state.widgetCatalog : state.companies;
 }
 
 function getSelectedWidgetSeatCount() {
