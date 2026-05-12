@@ -10,6 +10,13 @@ import {
   sanitizeWidgetThemeInput,
   upsertWidgetTheme,
 } from "../lib/widget-themes.js";
+import {
+  deleteWidgetEditorPrompt,
+  listWidgetEditorPrompts,
+  sanitizeWidgetEditorPromptDeleteInput,
+  sanitizeWidgetEditorPromptInput,
+  saveWidgetEditorPrompt,
+} from "../lib/widget-editor-prompts.js";
 import { getSessionUserFromCookieHeader } from "../lib/users.js";
 
 export default async function handler(request, response) {
@@ -80,6 +87,49 @@ export default async function handler(request, response) {
         model: suggestion.model,
         usage: suggestion.usage,
         responseId: suggestion.responseId,
+      });
+      return;
+    }
+
+    if (action === "savePrompt") {
+      const input = sanitizeWidgetEditorPromptInput(body);
+      if (input.error) {
+        sendJson(response, 400, { error: input.error });
+        return;
+      }
+
+      const prompt = await saveWidgetEditorPrompt(input);
+      if (!prompt) {
+        sendJson(response, 404, { error: "Saved prompt was not found." });
+        return;
+      }
+
+      const prompts = await listWidgetEditorPrompts(input.widgetKey);
+      sendJson(response, 200, {
+        message: input.promptId ? "Prompt updated." : "Prompt saved.",
+        prompt,
+        prompts,
+      });
+      return;
+    }
+
+    if (action === "deletePrompt") {
+      const input = sanitizeWidgetEditorPromptDeleteInput(body);
+      if (input.error) {
+        sendJson(response, 400, { error: input.error });
+        return;
+      }
+
+      const deleted = await deleteWidgetEditorPrompt(input);
+      if (!deleted) {
+        sendJson(response, 404, { error: "Saved prompt was not found." });
+        return;
+      }
+
+      const prompts = await listWidgetEditorPrompts(input.widgetKey);
+      sendJson(response, 200, {
+        message: "Prompt deleted.",
+        prompts,
       });
       return;
     }

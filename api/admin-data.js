@@ -3,6 +3,7 @@ import { listCompaniesTree } from "../lib/companies.js";
 import { ensureSchema } from "../lib/db.js";
 import { sendJson } from "../lib/http.js";
 import { getSessionUserFromCookieHeader, listUsersForSession } from "../lib/users.js";
+import { listWidgetEditorPrompts } from "../lib/widget-editor-prompts.js";
 
 export default async function handler(request, response) {
   await ensureSchema();
@@ -13,11 +14,12 @@ export default async function handler(request, response) {
     return;
   }
 
-  const [users, companies, appSettings] = await Promise.all([
+  const [users, companies, appSettings, widgetEditorPrompts] = await Promise.all([
     listUsersForSession(session),
     listCompaniesTree(),
     getAppSettings(),
+    listWidgetEditorPrompts(),
   ]);
 
-  sendJson(response, 200, { users, companies, appSettings });
+  sendJson(response, 200, { users, companies, appSettings, widgetEditorPrompts });
 }

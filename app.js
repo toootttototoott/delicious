@@ -216,6 +216,11 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-widget-editor-prompt-name]")) {
+    state.widgetEditor.promptName = event.target.value;
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-css]")) {
     state.widgetEditor.draftCss = event.target.value;
     return;
@@ -404,6 +409,7 @@ async function loadAdminData() {
   state.users = payload.users ?? [];
   state.companies = payload.companies ?? [];
   state.appSettings = payload.appSettings ?? createDefaultAppSettings();
+  state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(payload.widgetEditorPrompts);
   state.openAiModelDraft = state.appSettings.openAiModel;
   pruneSelections();
   syncWidgetSetupSelections();
@@ -888,6 +894,16 @@ function renderWidgetEditorPage() {
                 data-widget-editor-files
               />
             </div>
+            <div class="field">
+              <label for="widget-editor-prompt-name">Prompt name</label>
+              <input
+                id="widget-editor-prompt-name"
+                name="promptName"
+                placeholder="Example: Warm coastal booking widget"
+                value="${escapeHtml(state.widgetEditor.promptName)}"
+                data-widget-editor-prompt-name
+              />
+            </div>
             <div class="field full">
               <label for="widget-editor-prompt">Design request</label>
               <textarea
@@ -898,6 +914,47 @@ function renderWidgetEditorPage() {
                 data-widget-editor-prompt
               >${escapeHtml(state.widgetEditor.prompt)}</textarea>
             </div>
+          </div>
+          <div class="subsection">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Saved prompts</p>
+                <p class="meta">Load a saved prompt, edit the name or text, then save to update it. Use New prompt to keep the current text but save it as a separate item.</p>
+              </div>
+              <div class="stack-inline">
+                <button type="button" class="ghost-button" data-action="saveWidgetEditorPrompt">
+                  ${state.widgetEditor.selectedPromptId ? "Update prompt" : "Save prompt"}
+                </button>
+                <button type="button" class="ghost-button" data-action="clearWidgetEditorPromptSelection">New prompt</button>
+              </div>
+            </div>
+            ${
+              state.widgetEditor.savedPrompts.length
+                ? `
+                  <div class="saved-prompt-list">
+                    ${state.widgetEditor.savedPrompts
+                      .map(
+                        (prompt) => `
+                          <div class="saved-prompt-card ${state.widgetEditor.selectedPromptId === prompt.id ? "is-selected" : ""}">
+                            <div class="entity-row">
+                              <div>
+                                <strong>${escapeHtml(prompt.name)}</strong>
+                                <p class="meta">${escapeHtml(formatSavedPromptUpdatedAt(prompt.updatedAt))}</p>
+                              </div>
+                              <div class="stack-inline">
+                                <button type="button" class="ghost-button" data-action="loadWidgetEditorPrompt" data-prompt-id="${prompt.id}">Load</button>
+                                <button type="button" class="ghost-button" data-action="deleteWidgetEditorPrompt" data-prompt-id="${prompt.id}">Delete</button>
+                              </div>
+                            </div>
+                            <p class="saved-prompt-preview">${escapeHtml(previewWidgetEditorPrompt(prompt.promptText))}</p>
+                          </div>
+                        `,
+                      )
+                      .join("")}
+                  </div>
+                `
+                : '<div class="empty">No saved prompts yet.</div>'
+            }
           </div>
           ${state.widgetEditor.attachments.length ? `
             <div class="subsection">
@@ -1928,6 +1985,27 @@ async function handleAction(action, dataset) {
     return;
   }
 
+  if (action === "saveWidgetEditorPrompt") {
+    await handleWidgetEditorPromptSave();
+    return;
+  }
+
+  if (action === "loadWidgetEditorPrompt") {
+    loadWidgetEditorPrompt(dataset.promptId);
+    return;
+  }
+
+  if (action === "clearWidgetEditorPromptSelection") {
+    clearWidgetEditorPromptSelection();
+    render();
+    return;
+  }
+
+  if (action === "deleteWidgetEditorPrompt") {
+    await handleWidgetEditorPromptDelete(dataset.promptId);
+    return;
+  }
+
   if (action === "resetWidgetCssDraft") {
     state.widgetEditor.draftCss = getSelectedWidgetEditorEstablishment()?.widgetTheme?.cssText ?? "";
     setStatus("widgetEditor", "info", "Draft reset to the last saved CSS.");
@@ -2357,6 +2435,65 @@ async function handleWidgetEditorSave(form) {
   setStatus("widgetEditor", "success", data.message ?? "Widget CSS saved.");
 }
 
+async function handleWidgetEditorPromptSave() {
+  const name = state.widgetEditor.promptName.trim();
+  const promptText = state.widgetEditor.prompt.trim();
+  if (!name) {
+    setStatus("widgetEditor", "error", "Enter a prompt name first.");
+    return;
+  }
+
+  if (!promptText) {
+    setStatus("widgetEditor", "error", "Enter prompt text first.");
+    return;
+  }
+
+  const payload = {
+    action: "savePrompt",
+    widgetKey: "booking_calendar",
+    promptId: state.widgetEditor.selectedPromptId,
+    name,
+    promptText,
+  };
+
+  setStatus(
+    "widgetEditor",
+    "info",
+    state.widgetEditor.selectedPromptId ? "Updating saved prompt..." : "Saving prompt...",
+  );
+  const data = await postJson("/api/widget-editor", payload, "widgetEditor");
+  state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
+  if (data.prompt?.id) {
+    state.widgetEditor.selectedPromptId = data.prompt.id;
+    state.widgetEditor.promptName = data.prompt.name ?? name;
+    state.widgetEditor.prompt = data.prompt.promptText ?? promptText;
+  }
+  setStatus("widgetEditor", "success", data.message ?? "Prompt saved.");
+}
+
+async function handleWidgetEditorPromptDelete(promptId) {
+  const prompt = state.widgetEditor.savedPrompts.find((item) => item.id === promptId);
+  if (!prompt) {
+    return;
+  }
+
+  if (!confirm(`Delete saved prompt "${prompt.name}"?`)) {
+    return;
+  }
+
+  setStatus("widgetEditor", "info", "Deleting saved prompt...");
+  const data = await postJson(
+    "/api/widget-editor",
+    { action: "deletePrompt", widgetKey: "booking_calendar", promptId },
+    "widgetEditor",
+  );
+  state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
+  if (state.widgetEditor.selectedPromptId === promptId) {
+    clearWidgetEditorPromptSelection({ preservePrompt: false });
+  }
+  setStatus("widgetEditor", "success", data.message ?? "Prompt deleted.");
+}
+
 async function handleWidgetEditorFiles(fileList, options = {}) {
   const append = options.append === true;
   const sourceLabel = options.sourceLabel ?? "uploaded";
@@ -2577,7 +2714,9 @@ function syncLiveRefresh() {
   const widgetShouldPoll =
     document.visibilityState === "visible" &&
     location.pathname === "/widget" &&
-    Boolean(state.widget.seatCountId);
+    Boolean(state.widget.seatCountId) &&
+    !state.widget.modal &&
+    !isWidgetInputActive();
   const settingsInputActive = isSettingsInputActive();
   const adminShouldPoll =
     document.visibilityState === "visible" &&
@@ -2650,6 +2789,7 @@ function postWidgetHeightToParent() {
   }
 
   const root = document.querySelector(".widget-theme-root") ?? document.querySelector("#app");
+  const modalBackdrop = document.querySelector(".widget-modal-backdrop");
   const rootStyles = root ? window.getComputedStyle(root) : null;
   const rootMargins = rootStyles
     ? (Number.parseFloat(rootStyles.marginTop) || 0) + (Number.parseFloat(rootStyles.marginBottom) || 0)
@@ -2657,6 +2797,7 @@ function postWidgetHeightToParent() {
   const measuredHeight = root
     ? Math.ceil(root.getBoundingClientRect().height + rootMargins)
     : 0;
+  const modalViewportHeight = modalBackdrop ? Math.ceil(window.innerHeight) : 0;
   const fallbackHeight = Math.ceil(
     Math.max(
       document.documentElement.offsetHeight,
@@ -2665,7 +2806,7 @@ function postWidgetHeightToParent() {
       document.body.clientHeight,
     ),
   );
-  const height = root ? measuredHeight : fallbackHeight;
+  const height = Math.max(root ? measuredHeight : fallbackHeight, fallbackHeight, modalViewportHeight);
 
   window.parent.postMessage(
     {
@@ -2687,6 +2828,19 @@ function isSettingsInputActive() {
   }
 
   return Boolean(activeElement.closest("input, select, textarea"));
+}
+
+function isWidgetInputActive() {
+  if (location.pathname !== "/widget") {
+    return false;
+  }
+
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(activeElement.closest(".widget-form input, .widget-form select, .widget-form textarea"));
 }
 
 async function postJson(url, payload, scope) {
@@ -2758,7 +2912,10 @@ function createEmptyWidgetEditorState() {
     companyId: "",
     establishmentId: "",
     model: "gpt-5.4-nano",
+    promptName: "",
     prompt: "",
+    selectedPromptId: "",
+    savedPrompts: [],
     draftCss: "",
     attachments: [],
     lastGeneratedModel: "",
@@ -2955,6 +3112,14 @@ function syncWidgetEditorSelections() {
   if (!state.widgetEditor.model) {
     state.widgetEditor.model = state.appSettings.openAiModel;
   }
+
+  if (
+    state.widgetEditor.selectedPromptId &&
+    !state.widgetEditor.savedPrompts.some((prompt) => prompt.id === state.widgetEditor.selectedPromptId)
+  ) {
+    state.widgetEditor.selectedPromptId = "";
+    state.widgetEditor.promptName = "";
+  }
 }
 
 function syncAdminCalendarSelections() {
@@ -2980,6 +3145,73 @@ function syncAdminCalendarSelections() {
   if (!seatCounts.some((seatCount) => seatCount.id === state.adminCalendar.seatCountId)) {
     state.adminCalendar.seatCountId = seatCounts[0]?.id ?? "";
   }
+}
+
+function loadWidgetEditorPrompt(promptId) {
+  const prompt = state.widgetEditor.savedPrompts.find((item) => item.id === promptId);
+  if (!prompt) {
+    return;
+  }
+
+  state.widgetEditor.selectedPromptId = prompt.id;
+  state.widgetEditor.promptName = prompt.name;
+  state.widgetEditor.prompt = prompt.promptText;
+  setStatus("widgetEditor", "info", `Loaded prompt "${prompt.name}".`);
+}
+
+function clearWidgetEditorPromptSelection(options = {}) {
+  const preservePrompt = options.preservePrompt !== false;
+  state.widgetEditor.selectedPromptId = "";
+  state.widgetEditor.promptName = "";
+  if (!preservePrompt) {
+    state.widgetEditor.prompt = "";
+  }
+  clearStatus("widgetEditor");
+}
+
+function normalizeWidgetEditorPrompts(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => ({
+      id: String(item?.id ?? ""),
+      widgetKey: String(item?.widgetKey ?? ""),
+      name: String(item?.name ?? "").trim(),
+      promptText: String(item?.promptText ?? ""),
+      updatedAt: item?.updatedAt ?? null,
+    }))
+    .filter((item) => item.id && item.name)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.updatedAt ?? "") || 0;
+      const rightTime = Date.parse(right.updatedAt ?? "") || 0;
+      return rightTime - leftTime || left.name.localeCompare(right.name);
+    });
+}
+
+function previewWidgetEditorPrompt(value) {
+  const collapsed = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (collapsed.length <= 180) {
+    return collapsed;
+  }
+
+  return `${collapsed.slice(0, 177)}...`;
+}
+
+function formatSavedPromptUpdatedAt(value) {
+  const parsed = Date.parse(String(value ?? ""));
+  if (!parsed) {
+    return "Saved prompt";
+  }
+
+  return `Updated ${new Intl.DateTimeFormat("en-AU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(parsed))}`;
 }
 
 function syncWidgetFromLocation() {
