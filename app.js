@@ -514,22 +514,87 @@ function renderTopnav() {
   }
 
   const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
+  const widgetHref =
+    (canViewSettings ? getWidgetUrl() : "") ||
+    `/widget${state.widget.seatCountId ? `?seatCountId=${encodeURIComponent(state.widget.seatCountId)}` : ""}`;
+  const links = [
+    renderTopnavLink(widgetHref, "Widget", location.pathname === "/widget"),
+    canViewSettings
+      ? renderTopnavLink("/widget-setup", "Embed Setup", location.pathname === "/widget-setup")
+      : "",
+    canViewSettings
+      ? renderTopnavLink("/widget-editor", "Theme Editor", location.pathname === "/widget-editor")
+      : "",
+    canViewSettings
+      ? renderTopnavLink("/settings", "Admin", location.pathname === "/settings")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
   return `
-    <a href="/login" data-link>Display</a>
-    <a href="/widget${state.widget.seatCountId ? `?seatCountId=${encodeURIComponent(state.widget.seatCountId)}` : ""}" data-link>Widget View</a>
-    ${canViewSettings ? '<a href="/widget-setup" data-link>Widget Setup</a>' : ""}
-    ${canViewSettings ? '<a href="/widget-editor" data-link>Widget Editor</a>' : ""}
-    ${canViewSettings ? '<a href="/settings" data-link>Settings</a>' : ""}
+    <div class="topnav-links">${links}</div>
+    <div class="topnav-session">
+      ${
+        state.session
+          ? `
+            <div class="topnav-user">
+              <strong>${escapeHtml(state.session.firstName)} ${escapeHtml(state.session.lastName)}</strong>
+              <span>${escapeHtml(state.session.authLevel)}</span>
+            </div>
+            <button type="button" class="ghost-button" data-action="logout">Sign out</button>
+          `
+          : renderTopnavLink("/login", "Sign in", location.pathname === "/login")
+      }
+    </div>
+  `;
+}
+
+function renderTopnavLink(href, label, active) {
+  return `<a href="${href}" class="${active ? "is-active" : ""}" data-link>${label}</a>`;
+}
+
+function renderPageHeader({ eyebrow, title, meta, actions = "" }) {
+  return `
+    <article class="panel full-width page-hero">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+          <h2>${escapeHtml(title)}</h2>
+          ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
+        </div>
+        ${actions ? `<div class="stack-inline">${actions}</div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderSectionPanel({ eyebrow, title, meta = "", badge = "", content, open = true }) {
+  return `
+    <details class="panel full-width section-panel" ${open ? "open" : ""}>
+      <summary class="section-summary">
+        <div>
+          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+          <h3>${escapeHtml(title)}</h3>
+          ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
+        </div>
+        <div class="section-summary-side">
+          ${badge ? `<span class="badge">${badge}</span>` : ""}
+          <span class="section-chevron" aria-hidden="true"></span>
+        </div>
+      </summary>
+      <div class="section-body">${content}</div>
+    </details>
   `;
 }
 
 function renderLoginPage() {
   return `
     <section class="login-layout">
-      <article class="panel login-panel">
-        <p class="eyebrow">Booking system</p>
-        <h2>Sign in</h2>
-        <p class="meta">Use an email and password from a user created in settings.</p>
+      <article class="panel login-panel login-main-panel">
+        <p class="eyebrow">Account Access</p>
+        <h2>Sign in to continue</h2>
+        <p class="meta">Use an email and password from an existing user account.</p>
         <form class="stack" data-login-form autocomplete="on">
           <div class="form-grid">
             <div class="field full">
@@ -546,9 +611,20 @@ function renderLoginPage() {
         </form>
       </article>
       <article class="panel login-side">
-        <p class="eyebrow">Session</p>
-        <h3>${state.session ? "Signed in" : "No active session"}</h3>
-        ${renderSessionSummary()}
+        <p class="eyebrow">Workflow</p>
+        <h3>${state.session ? "Signed in" : "How it works"}</h3>
+        ${
+          state.session
+            ? renderSessionSummary()
+            : `
+              <div class="stack">
+                <p class="meta">1. Sign in with your assigned account.</p>
+                <p class="meta">2. Use Embed Setup to choose the live booking calendar.</p>
+                <p class="meta">3. Use Theme Editor to update the widget look and save prompts.</p>
+                <p class="meta">4. Use Admin to manage users, companies, establishments, and bookings.</p>
+              </div>
+            `
+        }
       </article>
     </section>
   `;
@@ -561,10 +637,14 @@ function renderSettingsPage() {
   if (!hasUsers) {
     return `
       <section class="layout">
+        ${renderPageHeader({
+          eyebrow: "Setup",
+          title: "Create the first admin account",
+          meta: "This is the one-time bootstrap step before the full admin area becomes available.",
+        })}
         <article class="panel wide">
-          <p class="eyebrow">Settings page</p>
           <h2>Create the first admin</h2>
-          <p class="meta">This is the one-time bootstrap step. After that, only admins can access settings.</p>
+          <p class="meta">After this step, only admins can access the management screens.</p>
           ${renderUserForm(true)}
           ${renderStatus("users")}
         </article>
@@ -580,8 +660,12 @@ function renderSettingsPage() {
   if (!isAdmin) {
     return `
       <section class="layout">
+        ${renderPageHeader({
+          eyebrow: "Access",
+          title: "Admin access required",
+          meta: "This section is restricted to admin accounts.",
+        })}
         <article class="panel wide">
-          <p class="eyebrow">Settings page</p>
           <h2>Admin only</h2>
           <p class="meta">Settings is restricted to admins.</p>
           <a class="button-primary" href="/login" data-link>Go to login</a>
@@ -592,111 +676,121 @@ function renderSettingsPage() {
 
   return `
     <section class="layout">
-      <article class="panel full-width">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Admin session</p>
-            <h2>Settings</h2>
-            <p class="meta">Manage users, companies, establishments, seat-count calendars, role assignments, and the default OpenAI model.</p>
+      ${renderPageHeader({
+        eyebrow: "Admin",
+        title: "Operations and setup",
+        meta: "Manage access, companies, establishments, seat-count calendars, bookings, and the default widget editor model.",
+        actions: renderSessionSummary(true),
+      })}
+      ${renderSectionPanel({
+        eyebrow: "System",
+        title: "Widget editor model",
+        meta: "Default model used when generating establishment-specific CSS.",
+        open: true,
+        content: `
+          <div class="section-content-grid section-content-grid-compact">
+            <div class="inner-panel">
+              ${renderOpenAiSettingsForm()}
+              ${renderStatus("openaiSettings")}
+            </div>
           </div>
-          <div class="stack-inline">
-            ${renderSessionSummary(true)}
+        `,
+      })}
+      ${renderSectionPanel({
+        eyebrow: "Users",
+        title: "Users and access",
+        meta: "Create and manage user accounts, roles, and assignments.",
+        badge: `${state.users.length} users`,
+        open: true,
+        content: `
+          <div class="section-content-grid">
+            <div class="inner-panel">
+              <p class="eyebrow">Form</p>
+              <h3>${state.userForm.mode === "edit" ? "Edit user" : "Create user"}</h3>
+              ${renderUserForm(false)}
+              ${renderStatus("users")}
+            </div>
+            <div class="inner-panel">
+              <div class="list-toolbar">
+                <input
+                  type="search"
+                  placeholder="Search users, emails, auth, company, establishment"
+                  value="${escapeHtml(state.filters.users)}"
+                  data-user-search
+                />
+                <button type="button" class="ghost-button" data-action="bulkDeleteUsers">
+                  Delete selected (${state.selectedUserIds.size})
+                </button>
+              </div>
+              <div class="list-header">
+                <label class="checkbox">
+                  <input
+                    type="checkbox"
+                    data-user-select-all
+                    ${areAllVisibleSelected("users") ? "checked" : ""}
+                  />
+                  <span>Select visible</span>
+                </label>
+              </div>
+              <div class="users">${renderUsers()}</div>
+            </div>
           </div>
-        </div>
-      </article>
-      <article class="panel admin-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">AI settings</p>
-            <h3>Widget editor model</h3>
-            <p class="meta">This default model is used by the widget editor when generating establishment-specific CSS.</p>
+        `,
+      })}
+      ${renderSectionPanel({
+        eyebrow: "Locations",
+        title: "Companies, establishments, and seat counts",
+        meta: "Keep the business structure and booking capacity organised in one place.",
+        badge: `${state.companies.length} companies`,
+        open: true,
+        content: `
+          <div class="section-content-grid">
+            <div class="inner-panel">
+              <p class="eyebrow">Form</p>
+              <h3>${state.companyForm.mode === "edit" ? "Edit company" : "Create company"}</h3>
+              ${renderCompanyForm()}
+              ${renderStatus("companies")}
+            </div>
+            <div class="inner-panel">
+              <div class="list-toolbar">
+                <input
+                  type="search"
+                  placeholder="Search companies, establishments, seat counts"
+                  value="${escapeHtml(state.filters.companies)}"
+                  data-company-search
+                />
+                <button type="button" class="ghost-button" data-action="bulkDeleteCompanies">
+                  Delete companies (${state.selectedCompanyIds.size})
+                </button>
+                <button type="button" class="ghost-button" data-action="bulkDeleteEstablishments">
+                  Delete establishments (${state.selectedEstablishmentIds.size})
+                </button>
+                <button type="button" class="ghost-button" data-action="bulkDeleteSeatCounts">
+                  Delete seat counts (${state.selectedSeatCountIds.size})
+                </button>
+              </div>
+              <div class="list-header">
+                <label class="checkbox">
+                  <input
+                    type="checkbox"
+                    data-company-select-all
+                    ${areAllVisibleSelected("companies") ? "checked" : ""}
+                  />
+                  <span>Select visible</span>
+                </label>
+              </div>
+              <div class="company-list">${renderCompanies()}</div>
+            </div>
           </div>
-        </div>
-        ${renderOpenAiSettingsForm()}
-        ${renderStatus("openaiSettings")}
-      </article>
-      <article class="panel admin-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Users panel</p>
-            <h3>${state.userForm.mode === "edit" ? "Edit user" : "Create user"}</h3>
-          </div>
-          <span class="badge">${state.users.length} users</span>
-        </div>
-        ${renderUserForm(false)}
-        <div class="list-toolbar">
-          <input
-            type="search"
-            placeholder="Search users, emails, auth, company, establishment"
-            value="${escapeHtml(state.filters.users)}"
-            data-user-search
-          />
-          <button type="button" class="ghost-button" data-action="bulkDeleteUsers">
-            Delete selected (${state.selectedUserIds.size})
-          </button>
-        </div>
-        ${renderStatus("users")}
-        <div class="list-header">
-          <label class="checkbox">
-            <input
-              type="checkbox"
-              data-user-select-all
-              ${areAllVisibleSelected("users") ? "checked" : ""}
-            />
-            <span>Select visible</span>
-          </label>
-        </div>
-        <div class="users">${renderUsers()}</div>
-      </article>
-      <article class="panel admin-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Companies panel</p>
-            <h3>${state.companyForm.mode === "edit" ? "Edit company" : "Create company"}</h3>
-          </div>
-          <span class="badge">${state.companies.length} companies</span>
-        </div>
-        ${renderCompanyForm()}
-        <div class="list-toolbar">
-          <input
-            type="search"
-            placeholder="Search companies, establishments, seat counts"
-            value="${escapeHtml(state.filters.companies)}"
-            data-company-search
-          />
-          <button type="button" class="ghost-button" data-action="bulkDeleteCompanies">
-            Delete selected (${state.selectedCompanyIds.size})
-          </button>
-          <button type="button" class="ghost-button" data-action="bulkDeleteEstablishments">
-            Delete establishments (${state.selectedEstablishmentIds.size})
-          </button>
-          <button type="button" class="ghost-button" data-action="bulkDeleteSeatCounts">
-            Delete seat counts (${state.selectedSeatCountIds.size})
-          </button>
-        </div>
-        ${renderStatus("companies")}
-        <div class="list-header">
-          <label class="checkbox">
-            <input
-              type="checkbox"
-              data-company-select-all
-              ${areAllVisibleSelected("companies") ? "checked" : ""}
-            />
-            <span>Select visible</span>
-          </label>
-        </div>
-        <div class="company-list">${renderCompanies()}</div>
-      </article>
-      <article class="panel full-width">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Bookings panel</p>
-            <h3>Booking calendar</h3>
-            <p class="meta">Set weekly opening hours, inspect remaining seats, and manage bookings from the calendar.</p>
-          </div>
-        </div>
-        ${renderBookingsPanel()}
-      </article>
+        `,
+      })}
+      ${renderSectionPanel({
+        eyebrow: "Bookings",
+        title: "Booking calendar",
+        meta: "Set opening hours, inspect seat availability, and manage bookings by day.",
+        open: true,
+        content: `<div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>`,
+      })}
     </section>
   `;
 }
@@ -742,89 +836,107 @@ function renderWidgetSetupPage() {
 
   return `
     <section class="layout">
-      <article class="panel wide">
-        <p class="eyebrow">Widget setup</p>
-        <h2>Choose the widget source</h2>
-        <p class="meta">This is the admin-only place to select which seat-count calendar a website should embed.</p>
-        <div class="form-grid">
-          <div class="field">
-            <label for="setup-company">Company</label>
-            <select id="setup-company" data-setup-company>
-              ${!companies.length ? '<option value="">No companies yet</option>' : ""}
-              ${companies
-                .map(
-                  (company) => `
-                    <option value="${company.id}" ${state.widgetSetup.companyId === company.id ? "selected" : ""}>
-                      ${escapeHtml(company.name)}
-                    </option>
-                  `,
-                )
-                .join("")}
-            </select>
+      ${renderPageHeader({
+        eyebrow: "Embed Setup",
+        title: "Choose the live widget source",
+        meta: "Select the company, establishment, and seat-count calendar that the public website should embed.",
+      })}
+      <article class="panel full-width">
+        <div class="two-column-layout">
+          <div class="inner-panel">
+            <p class="eyebrow">Selection</p>
+            <h3>Widget source</h3>
+            <div class="form-grid form-grid-three">
+              <div class="field">
+                <label for="setup-company">Company</label>
+                <select id="setup-company" data-setup-company>
+                  ${!companies.length ? '<option value="">No companies yet</option>' : ""}
+                  ${companies
+                    .map(
+                      (company) => `
+                        <option value="${company.id}" ${state.widgetSetup.companyId === company.id ? "selected" : ""}>
+                          ${escapeHtml(company.name)}
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+              <div class="field">
+                <label for="setup-establishment">Establishment</label>
+                <select id="setup-establishment" data-setup-establishment>
+                  ${!establishments.length ? '<option value="">No establishments yet</option>' : ""}
+                  ${establishments
+                    .map(
+                      (establishment) => `
+                        <option value="${establishment.id}" ${state.widgetSetup.establishmentId === establishment.id ? "selected" : ""}>
+                          ${escapeHtml(establishment.name)}
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+              <div class="field">
+                <label for="setup-seat-count">Seat-count calendar</label>
+                <select id="setup-seat-count" data-setup-seat-count>
+                  ${!seatCounts.length ? '<option value="">No seat-count calendars yet</option>' : ""}
+                  ${seatCounts
+                    .map(
+                      (seatCount) => `
+                        <option value="${seatCount.id}" ${state.widgetSetup.seatCountId === seatCount.id ? "selected" : ""}>
+                          ${escapeHtml(seatCount.label)}
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+            </div>
+            ${renderStatus("widgetSetup")}
+            ${
+              !companies.length
+                ? '<div class="empty">Create a company first in Admin.</div>'
+                : !establishments.length
+                  ? '<div class="empty">Create an establishment for this company in Admin.</div>'
+                  : !seatCounts.length
+                    ? '<div class="empty">Create at least one seat count for this establishment in Admin.</div>'
+                    : ""
+            }
           </div>
-          <div class="field">
-            <label for="setup-establishment">Establishment</label>
-            <select id="setup-establishment" data-setup-establishment>
-              ${!establishments.length ? '<option value="">No establishments yet</option>' : ""}
-              ${establishments
-                .map(
-                  (establishment) => `
-                    <option value="${establishment.id}" ${state.widgetSetup.establishmentId === establishment.id ? "selected" : ""}>
-                      ${escapeHtml(establishment.name)}
-                    </option>
-                  `,
-                )
-                .join("")}
-            </select>
-          </div>
-          <div class="field full">
-            <label for="setup-seat-count">Seat-count calendar</label>
-            <select id="setup-seat-count" data-setup-seat-count>
-              ${!seatCounts.length ? '<option value="">No seat-count calendars yet</option>' : ""}
-              ${seatCounts
-                .map(
-                  (seatCount) => `
-                    <option value="${seatCount.id}" ${state.widgetSetup.seatCountId === seatCount.id ? "selected" : ""}>
-                      ${escapeHtml(seatCount.label)}
-                    </option>
-                  `,
-                )
-                .join("")}
-            </select>
-          </div>
-        </div>
-        ${renderStatus("widgetSetup")}
-        ${
-          !companies.length
-            ? '<div class="empty">Create a company first in settings.</div>'
-            : !establishments.length
-              ? '<div class="empty">Create an establishment for this company in settings.</div>'
-              : !seatCounts.length
-                ? '<div class="empty">Create at least one seat count for this establishment in settings.</div>'
-                : ""
-        }
-        <div class="setup-output">
-          <label>Widget URL</label>
-          <div class="copy-row">
-            <input readonly value="${escapeHtml(widgetUrl)}" />
-            <button type="button" class="ghost-button" data-action="copyWidgetUrl" data-url="${escapeHtml(widgetUrl)}">Copy URL</button>
-            <button type="button" class="ghost-button" data-action="openWidgetPreview" data-url="${escapeHtml(widgetUrl)}">Open preview</button>
-          </div>
-        </div>
-        <div class="setup-output">
-          <label>Embed code</label>
-          <div class="copy-row">
-            <textarea readonly rows="4">${escapeHtml(iframeSnippet)}</textarea>
-            <button type="button" class="ghost-button" data-action="copyWidgetEmbed" data-url="${escapeHtml(iframeSnippet)}">Copy embed</button>
-          </div>
+          <aside class="inner-panel">
+            <p class="eyebrow">Current target</p>
+            <h3>${escapeHtml(getSelectedSeatCountLabel() || "No seat count selected")}</h3>
+            <p class="meta">${escapeHtml(getSelectedEstablishmentLabel() || "")}</p>
+            <p class="meta">The public widget no longer shows company, establishment, or seat-count selectors. Those are configured here and passed in the URL.</p>
+          </aside>
         </div>
       </article>
-      <aside class="panel side">
-        <p class="eyebrow">Preview target</p>
-        <h3>${escapeHtml(getSelectedSeatCountLabel() || "No seat count selected")}</h3>
-        <p class="meta">${escapeHtml(getSelectedEstablishmentLabel() || "")}</p>
-        <p class="meta">The public widget no longer shows company, establishment, or seat-count selectors. Those are configured here and passed in the URL.</p>
-      </aside>
+      ${renderSectionPanel({
+        eyebrow: "Share",
+        title: "Widget URL and embed code",
+        meta: "Copy the direct URL for testing or the iframe snippet for the external website.",
+        open: true,
+        content: `
+          <div class="section-content-grid">
+            <div class="inner-panel">
+              <label>Widget URL</label>
+              <div class="copy-row">
+                <input readonly value="${escapeHtml(widgetUrl)}" />
+                <button type="button" class="ghost-button" data-action="copyWidgetUrl" data-url="${escapeHtml(widgetUrl)}">Copy URL</button>
+                <button type="button" class="ghost-button" data-action="openWidgetPreview" data-url="${escapeHtml(widgetUrl)}">Open preview</button>
+              </div>
+            </div>
+            <div class="inner-panel">
+              <label>Embed code</label>
+              <div class="copy-row">
+                <textarea readonly rows="6">${escapeHtml(iframeSnippet)}</textarea>
+                <button type="button" class="ghost-button" data-action="copyWidgetEmbed" data-url="${escapeHtml(iframeSnippet)}">Copy embed</button>
+              </div>
+            </div>
+          </div>
+        `,
+      })}
     </section>
   `;
 }
@@ -836,9 +948,14 @@ function renderWidgetEditorPage() {
 
   return `
     <section class="layout">
-      <article class="panel admin-panel">
-        <p class="eyebrow">Widget editor</p>
-        <h2>Generate widget CSS</h2>
+      ${renderPageHeader({
+        eyebrow: "Theme Editor",
+        title: "Generate and manage widget CSS",
+        meta: "Choose the target establishment, attach reference files, save prompt templates, and edit the final CSS.",
+      })}
+      <article class="panel panel-span-5">
+        <p class="eyebrow">Generator</p>
+        <h2>Prompt and references</h2>
         <p class="meta">Pick a company and establishment, describe the visual direction, attach reference files, and generate CSS for the booking widget.</p>
         ${
           !companies.length
@@ -987,8 +1104,8 @@ function renderWidgetEditorPage() {
         </form>
         ${renderStatus("widgetEditor")}
       </article>
-      <article class="panel admin-panel">
-        <p class="eyebrow">Widget theme</p>
+      <article class="panel panel-span-7">
+        <p class="eyebrow">CSS Workspace</p>
         <h3>Booking calendar CSS</h3>
         <p class="meta">This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.</p>
         <form class="stack" data-widget-editor-save-form>
@@ -2390,6 +2507,11 @@ async function handleWidgetEditorGenerate(form) {
   const establishment = getSelectedWidgetEditorEstablishment();
   if (!establishment) {
     setStatus("widgetEditor", "error", "Choose an establishment first.");
+    return;
+  }
+
+  if (!state.widgetEditor.attachments.length) {
+    setStatus("widgetEditor", "error", "Attach at least one reference file before generating CSS.");
     return;
   }
 
