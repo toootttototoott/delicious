@@ -510,6 +510,11 @@ input[type="checkbox"] {
   text-align: center;
 }
 
+.widget-calendar-nav .ghost-button {
+  width: 96px;
+  text-align: center;
+}
+
 .calendar-shell {
   display: grid;
   gap: 10px;

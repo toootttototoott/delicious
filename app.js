@@ -1613,7 +1613,7 @@ function renderBookingsPanel() {
 function renderCalendarNavigator() {
   const label = formatMonthLabel(state.widget.currentMonth);
   return `
-    <div class="calendar-nav">
+    <div class="calendar-nav widget-calendar-nav">
       <button type="button" class="ghost-button" data-action="previousWidgetMonth">Previous</button>
       <div class="calendar-month">${escapeHtml(label)}</div>
       <button type="button" class="ghost-button" data-action="nextWidgetMonth">Next</button>
