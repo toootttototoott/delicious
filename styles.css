@@ -432,6 +432,51 @@ input[type="checkbox"] {
   color: var(--ok);
 }
 
+.prominent-process-panel {
+  border-color: rgba(200, 106, 60, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(200, 106, 60, 0.14), transparent 38%),
+    rgba(255, 250, 244, 0.96);
+}
+
+.prominent-process-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(200, 106, 60, 0.18);
+  background: rgba(200, 106, 60, 0.08);
+}
+
+.prominent-process-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 1.02rem;
+  color: var(--accent-dark);
+}
+
+.prominent-process-banner-inline {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.prominent-process-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 3px solid rgba(200, 106, 60, 0.16);
+  border-top-color: var(--accent);
+  animation: booking-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes booking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .identity {
   display: inline-flex;
   align-items: center;
@@ -868,12 +913,34 @@ input[type="checkbox"] {
   align-items: start;
 }
 
+.page-view-layout {
+  align-items: start;
+}
+
 .widget-theme-root {
+  position: relative;
+}
+
+.page-view-theme-root {
   position: relative;
 }
 
 .widget-calendar-panel {
   overflow: hidden;
+}
+
+.page-view-panel {
+  overflow: hidden;
+}
+
+.page-view-header {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.page-view-title {
+  margin: 0;
 }
 
 html.route-widget #app,
@@ -908,6 +975,16 @@ body.widget-embed .widget-calendar-panel {
   background: rgba(29, 42, 36, 0.32);
   backdrop-filter: blur(8px);
   z-index: 30;
+}
+
+.public-loading-layout {
+  grid-template-columns: 1fr;
+}
+
+.public-loading-panel {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
 }
 
 .widget-modal {

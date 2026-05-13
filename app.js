@@ -1,4 +1,5 @@
 const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
+const THEME_EDITOR_MODEL_STORAGE_PREFIX = "booking-theme-editor:model:";
 
 const state = {
   booting: true,
@@ -70,8 +71,10 @@ const routes = new Map([
   ["/login", renderLoginPage],
   ["/settings", renderSettingsPage],
   ["/widget", renderWidgetPage],
+  ["/page-view", renderPageViewPage],
   ["/widget-setup", renderWidgetSetupPage],
   ["/widget-editor", renderWidgetEditorPage],
+  ["/page-view-editor", renderPageViewEditorPage],
 ]);
 
 let widgetLiveRefreshHandle = null;
@@ -110,7 +113,7 @@ document.addEventListener("click", (event) => {
 window.addEventListener("popstate", () => {
   redirectSignedInUserFromLogin();
 
-  if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
+  if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog().catch(() => {
       setStatus("widget", "error", "Widget data could not be loaded.");
     });
@@ -129,7 +132,9 @@ window.addEventListener("popstate", () => {
   }
 
   if (
-    (location.pathname === "/widget-setup" || location.pathname === "/widget-editor") &&
+    (location.pathname === "/widget-setup" ||
+      location.pathname === "/widget-editor" ||
+      location.pathname === "/page-view-editor") &&
     isAdminSession() &&
     !state.companies.length
   ) {
@@ -155,7 +160,7 @@ document.addEventListener("visibilitychange", () => {
     return;
   }
 
-  if (location.pathname === "/widget" && state.widget.seatCountId) {
+  if (isPublicBookingRoute() && state.widget.seatCountId) {
     refreshWidgetAvailability({ silent: true }).then(render).catch(() => {});
   }
 
@@ -271,6 +276,7 @@ document.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-widget-editor-model]")) {
     state.widgetEditor.model = event.target.value;
+    persistThemeEditorModelChoice(getActiveThemeEditorKey(), event.target.value);
   }
 });
 
@@ -442,7 +448,7 @@ async function boot() {
 
     redirectSignedInUserFromLogin();
 
-    if (location.pathname === "/widget") {
+    if (isPublicBookingRoute()) {
       const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
       if (widgetResult[0]?.status === "rejected") {
         setStatus("widget", "error", "Widget data could not be loaded.");
@@ -461,7 +467,8 @@ async function boot() {
 
     if (
       (location.pathname === "/widget-setup" ||
-        location.pathname === "/widget-editor") &&
+        location.pathname === "/widget-editor" ||
+        location.pathname === "/page-view-editor") &&
       isAdminSession()
     ) {
       const adminResult = await Promise.allSettled([loadAdminData()]);
@@ -537,7 +544,7 @@ async function loadWidgetCatalog() {
 function navigate(target) {
   history.pushState({}, "", target);
   redirectSignedInUserFromLogin();
-  if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
+  if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog()
       .then(() => {
         syncWidgetFromLocation();
@@ -564,7 +571,9 @@ function navigate(target) {
   }
 
   if (
-    (location.pathname === "/widget-setup" || location.pathname === "/widget-editor") &&
+    (location.pathname === "/widget-setup" ||
+      location.pathname === "/widget-editor" ||
+      location.pathname === "/page-view-editor") &&
     isAdminSession() &&
     !state.companies.length
   ) {
@@ -592,7 +601,7 @@ function render() {
 
   if (state.booting) {
     topnav.innerHTML = "";
-    app.innerHTML = renderBootPage();
+    app.innerHTML = isPublicBookingRoute() ? renderPublicBookingLoadingPage() : renderBootPage();
     scheduleWidgetHeightSync();
     return;
   }
@@ -621,7 +630,7 @@ function applyRouteChrome() {
   const body = document.body;
   const shell = document.querySelector(".shell");
   const masthead = document.querySelector(".masthead");
-  const isWidgetRoute = location.pathname === "/widget";
+  const isWidgetRoute = isPublicBookingRoute();
   const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
   const hideChrome = state.booting || isWidgetRoute || isLoginRoute || isManagerSession() || isStaffSession();
 
@@ -636,7 +645,7 @@ function applyRouteChrome() {
 
 function renderTopnav() {
   if (
-    location.pathname === "/widget" ||
+    isPublicBookingRoute() ||
     location.pathname === "/login" ||
     location.pathname === "/" ||
     isManagerSession() ||
@@ -659,6 +668,11 @@ function renderTopnav() {
     canViewSettings
       ? isAdminSession()
         ? renderTopnavLink("/widget-editor", "Theme Editor", location.pathname === "/widget-editor")
+        : ""
+      : "",
+    canViewSettings
+      ? isAdminSession()
+        ? renderTopnavLink("/page-view-editor", "Page View Editor", location.pathname === "/page-view-editor")
         : ""
       : "",
     canViewSettings
@@ -744,6 +758,22 @@ function renderBootPage() {
         <div class="stack">
           <p class="meta">If you already have an active session, you will be taken straight through automatically.</p>
           <p class="meta">If not, the sign-in form will appear here as soon as the check finishes.</p>
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderPublicBookingLoadingPage() {
+  return `
+    <section class="layout widget-layout widget-theme-root public-loading-layout">
+      <article class="panel full-width widget-calendar-panel public-loading-panel">
+        <div class="prominent-process-banner prominent-process-banner-inline" aria-live="polite">
+          <div class="prominent-process-spinner" aria-hidden="true"></div>
+          <div>
+            <strong>Loading booking calendar</strong>
+            <p class="meta">One moment while the available dates and times are prepared.</p>
+          </div>
         </div>
       </article>
     </section>
@@ -1189,29 +1219,39 @@ function renderWidgetSetupPage() {
 }
 
 function renderWidgetEditorPage() {
+  return renderThemeEditorPage(getThemeEditorConfig("booking_calendar"));
+}
+
+function renderPageViewEditorPage() {
+  return renderThemeEditorPage(getThemeEditorConfig("booking_page_view"));
+}
+
+function renderThemeEditorPage(editor) {
   const companies = getWidgetEditorCompanies();
   const establishments = getWidgetEditorEstablishments();
-  const previewUrl = getWidgetEditorPreviewUrl();
+  const previewUrl = getThemeEditorPreviewUrl();
   const uploadLimitLabel = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
+  const savedPrompts = getActiveThemeEditorPrompts();
 
   return `
     <section class="layout">
       ${renderPageHeader({
-        eyebrow: "Theme Editor",
-        title: "Generate and manage widget CSS",
-        meta: "Choose the target establishment, attach reference files, save prompt templates, and edit the final CSS.",
+        eyebrow: editor.eyebrow,
+        title: editor.title,
+        meta: editor.meta,
       })}
+      ${renderProminentProcessStatus("widgetEditor")}
       <article class="panel panel-span-5">
         <p class="eyebrow">Generator</p>
         <h2>Prompt and references</h2>
-        <p class="meta">Pick a company and establishment, describe the visual direction, attach reference files, and generate CSS for the booking widget.</p>
+        <p class="meta">${escapeHtml(editor.generatorMeta)}</p>
         ${
           !companies.length
-            ? '<div class="empty">Create a company and establishment in settings before using the widget editor.</div>'
+            ? `<div class="empty">${escapeHtml(editor.emptyState)}</div>`
             : ""
         }
         <form class="stack" data-widget-editor-generate-form>
-          <input type="hidden" name="widgetKey" value="booking_calendar" />
+          <input type="hidden" name="widgetKey" value="${escapeHtml(editor.key)}" />
           <div class="form-grid">
             <div class="field">
               <label for="widget-editor-company">Company</label>
@@ -1265,7 +1305,7 @@ function renderWidgetEditorPage() {
               <input
                 id="widget-editor-prompt-name"
                 name="promptName"
-                placeholder="Example: Warm coastal booking widget"
+                placeholder="${escapeHtml(editor.promptNamePlaceholder)}"
                 value="${escapeHtml(state.widgetEditor.promptName)}"
                 data-widget-editor-prompt-name
               />
@@ -1276,7 +1316,7 @@ function renderWidgetEditorPage() {
                 id="widget-editor-prompt"
                 name="requestText"
                 rows="8"
-                placeholder="Example: Match the restaurant site. Use the uploaded hero image colors, a warmer cream background, sharper card corners, and bolder selected-day states."
+                placeholder="${escapeHtml(editor.promptPlaceholder)}"
                 data-widget-editor-prompt
               >${escapeHtml(state.widgetEditor.prompt)}</textarea>
             </div>
@@ -1295,10 +1335,10 @@ function renderWidgetEditorPage() {
               </div>
             </div>
             ${
-              state.widgetEditor.savedPrompts.length
+              savedPrompts.length
                 ? `
                   <div class="saved-prompt-list">
-                    ${state.widgetEditor.savedPrompts
+                    ${savedPrompts
                       .map(
                         (prompt) => `
                           <div class="saved-prompt-card ${state.widgetEditor.selectedPromptId === prompt.id ? "is-selected" : ""}">
@@ -1355,10 +1395,10 @@ function renderWidgetEditorPage() {
       </article>
       <article class="panel panel-span-7">
         <p class="eyebrow">CSS Workspace</p>
-        <h3>Booking calendar CSS</h3>
-        <p class="meta">This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.</p>
+        <h3>${escapeHtml(editor.workspaceTitle)}</h3>
+        <p class="meta">${escapeHtml(editor.workspaceMeta)}</p>
         <form class="stack" data-widget-editor-save-form>
-          <input type="hidden" name="widgetKey" value="booking_calendar" />
+          <input type="hidden" name="widgetKey" value="${escapeHtml(editor.key)}" />
           <input type="hidden" name="establishmentId" value="${escapeHtml(state.widgetEditor.establishmentId)}" />
           <div class="field">
             <label for="widget-editor-css">CSS</label>
@@ -1367,7 +1407,7 @@ function renderWidgetEditorPage() {
               name="cssText"
               class="code-input"
               rows="22"
-              placeholder=".widget-theme-root { ... }"
+              placeholder="${escapeHtml(editor.cssPlaceholder)}"
               data-widget-editor-css
             >${escapeHtml(state.widgetEditor.draftCss)}</textarea>
           </div>
@@ -1381,7 +1421,86 @@ function renderWidgetEditorPage() {
   `;
 }
 
+function renderProminentProcessStatus(scope) {
+  const status = state.statuses[scope];
+  if (!status?.message || status.kind !== "info") {
+    return "";
+  }
+
+  return `
+    <article class="panel full-width prominent-process-panel" aria-live="polite">
+      <div class="prominent-process-banner">
+        <div class="prominent-process-spinner" aria-hidden="true"></div>
+        <div>
+          <strong>Processing</strong>
+          <p class="meta">${escapeHtml(status.message)}</p>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
+  if (key === "booking_page_view") {
+    return {
+      key,
+      eyebrow: "Page View Editor",
+      title: "Generate and manage booking page CSS",
+      meta: "Choose the target establishment, attach reference files, save prompt templates, and edit the final CSS for the standalone booking page.",
+      generatorMeta: "Pick a company and establishment, describe the visual direction, attach reference files, and generate CSS for the standalone booking page.",
+      emptyState: "Create a company and establishment in settings before using the page view editor.",
+      promptNamePlaceholder: "Example: Warm coastal booking page",
+      promptPlaceholder: "Example: Build a fuller booking page with a soft hero area, stronger typography, larger calendar framing, and a more editorial page layout.",
+      workspaceTitle: "Booking page CSS",
+      workspaceMeta: "This CSS is scoped to the selected establishment's standalone booking page and applies across its seat-count calendars.",
+      cssPlaceholder: ".page-view-theme-root { ... }",
+      previewPath: "/page-view",
+      generatedLabel: "Booking page CSS",
+      savedLabel: "Booking page CSS",
+    };
+  }
+
+  return {
+    key: "booking_calendar",
+    eyebrow: "Theme Editor",
+    title: "Generate and manage widget CSS",
+    meta: "Choose the target establishment, attach reference files, save prompt templates, and edit the final CSS.",
+    generatorMeta: "Pick a company and establishment, describe the visual direction, attach reference files, and generate CSS for the booking widget.",
+    emptyState: "Create a company and establishment in settings before using the widget editor.",
+    promptNamePlaceholder: "Example: Warm coastal booking widget",
+    promptPlaceholder: "Example: Match the restaurant site. Use the uploaded hero image colors, a warmer cream background, sharper card corners, and bolder selected-day states.",
+    workspaceTitle: "Booking calendar CSS",
+    workspaceMeta: "This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.",
+    cssPlaceholder: ".widget-theme-root { ... }",
+    previewPath: "/widget",
+    generatedLabel: "Widget CSS",
+    savedLabel: "Widget CSS",
+  };
+}
+
 function renderWidgetPage() {
+  return renderBookingExperiencePage({
+    themeRootClass: "widget-theme-root",
+    layoutClass: "widget-layout",
+    panelClass: "widget-calendar-panel",
+    themeCss: getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.widgetThemeCss || "",
+    title: "",
+    copy: "",
+  });
+}
+
+function renderPageViewPage() {
+  return renderBookingExperiencePage({
+    themeRootClass: "page-view-theme-root",
+    layoutClass: "page-view-layout",
+    panelClass: "page-view-panel",
+    themeCss: getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.pageViewThemeCss || "",
+    title: "Book a table",
+    copy: "Choose a day, pick a time, and confirm your booking details.",
+  });
+}
+
+function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, themeCss, title, copy }) {
   if (!state.widget.seatCountId || !getSelectedWidgetSeatCount()) {
     return `
       <section class="layout">
@@ -1396,13 +1515,22 @@ function renderWidgetPage() {
   }
 
   const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
-  const widgetThemeCss =
-    getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.widgetThemeCss || "";
 
   return `
-    ${widgetThemeCss ? `<style>${escapeStyleTagContent(widgetThemeCss)}</style>` : ""}
-    <section class="layout widget-layout widget-theme-root">
-      <article class="panel full-width widget-calendar-panel">
+    ${themeCss ? `<style>${escapeStyleTagContent(themeCss)}</style>` : ""}
+    <section class="layout ${escapeHtml(layoutClass)} ${escapeHtml(themeRootClass)}">
+      <article class="panel full-width ${escapeHtml(panelClass)}">
+        ${
+          title
+            ? `
+              <div class="page-view-header">
+                <p class="eyebrow page-view-kicker">Book now</p>
+                <h1 class="page-view-title">${escapeHtml(title)}</h1>
+                <p class="meta page-view-copy">${escapeHtml(copy)}</p>
+              </div>
+            `
+            : ""
+        }
         ${renderStatus("widget")}
         ${renderCalendarNavigator()}
         ${renderWidgetCalendar()}
@@ -2792,7 +2920,7 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "openWidgetEditorPreview") {
-    const previewUrl = buildWidgetEditorPreviewUrl();
+    const previewUrl = buildThemeEditorPreviewUrl();
     if (!previewUrl) {
       setStatus("widgetEditor", "error", "Select an establishment with at least one seat-count calendar first.");
       return;
@@ -2830,7 +2958,7 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "resetWidgetCssDraft") {
-    state.widgetEditor.draftCss = getSelectedWidgetEditorEstablishment()?.widgetTheme?.cssText ?? "";
+    state.widgetEditor.draftCss = getSelectedThemeEditorCss(getSelectedWidgetEditorEstablishment()) ?? "";
     setStatus("widgetEditor", "info", "Draft reset to the last saved CSS.");
     return;
   }
@@ -3228,7 +3356,8 @@ async function handleOpenAiSettingsSubmit(form) {
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
   state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
   state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
-  state.widgetEditor.model = state.appSettings.openAiModel;
+  state.widgetEditor.model =
+    loadThemeEditorModelChoice(getActiveThemeEditorKey()) || state.appSettings.openAiModel;
   setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
 }
 
@@ -3393,6 +3522,7 @@ function downloadBookingReportCsv() {
 
 async function handleWidgetEditorGenerate(form) {
   const establishment = getSelectedWidgetEditorEstablishment();
+  const editor = getThemeEditorConfig();
   if (!establishment) {
     setStatus("widgetEditor", "error", "Choose an establishment first.");
     return;
@@ -3422,7 +3552,7 @@ async function handleWidgetEditorGenerate(form) {
     setStatus(
       "widgetEditor",
       "success",
-      data.message ?? `Widget CSS generated${state.widgetEditor.lastGeneratedModel ? ` with ${state.widgetEditor.lastGeneratedModel}` : ""}.`,
+      data.message ?? `${editor.generatedLabel} generated${state.widgetEditor.lastGeneratedModel ? ` with ${state.widgetEditor.lastGeneratedModel}` : ""}.`,
     );
   } finally {
     clearWidgetEditorAttachments();
@@ -3431,6 +3561,7 @@ async function handleWidgetEditorGenerate(form) {
 
 async function handleWidgetEditorSave(form) {
   const establishment = getSelectedWidgetEditorEstablishment();
+  const editor = getThemeEditorConfig();
   if (!establishment) {
     setStatus("widgetEditor", "error", "Choose an establishment first.");
     return;
@@ -3441,11 +3572,11 @@ async function handleWidgetEditorSave(form) {
   payload.establishmentId = state.widgetEditor.establishmentId;
   payload.cssText = state.widgetEditor.draftCss;
 
-  setStatus("widgetEditor", "info", "Saving widget CSS...");
+  setStatus("widgetEditor", "info", `Saving ${editor.savedLabel}...`);
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
   await refreshAdminState();
   state.widgetEditor.draftCss = data.theme?.cssText ?? state.widgetEditor.draftCss;
-  setStatus("widgetEditor", "success", data.message ?? "Widget CSS saved.");
+  setStatus("widgetEditor", "success", data.message ?? `${editor.savedLabel} saved.`);
 }
 
 async function handleWidgetEditorPromptSave() {
@@ -3463,7 +3594,7 @@ async function handleWidgetEditorPromptSave() {
 
   const payload = {
     action: "savePrompt",
-    widgetKey: "booking_calendar",
+    widgetKey: getActiveThemeEditorKey(),
     promptId: state.widgetEditor.selectedPromptId,
     name,
     promptText,
@@ -3485,7 +3616,7 @@ async function handleWidgetEditorPromptSave() {
 }
 
 async function handleWidgetEditorPromptDelete(promptId) {
-  const prompt = state.widgetEditor.savedPrompts.find((item) => item.id === promptId);
+  const prompt = getActiveThemeEditorPrompts().find((item) => item.id === promptId);
   if (!prompt) {
     return;
   }
@@ -3497,7 +3628,7 @@ async function handleWidgetEditorPromptDelete(promptId) {
   setStatus("widgetEditor", "info", "Deleting saved prompt...");
   const data = await postJson(
     "/api/widget-editor",
-    { action: "deletePrompt", widgetKey: "booking_calendar", promptId },
+    { action: "deletePrompt", widgetKey: getActiveThemeEditorKey(), promptId },
     "widgetEditor",
   );
   state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
@@ -3966,6 +4097,14 @@ function getSignedInLandingPath() {
   return hasSettingsAccess() ? "/settings" : "/widget";
 }
 
+function isPublicBookingRoute(pathname = location.pathname) {
+  return pathname === "/widget" || pathname === "/page-view";
+}
+
+function getActiveThemeEditorKey(pathname = location.pathname) {
+  return pathname === "/page-view-editor" ? "booking_page_view" : "booking_calendar";
+}
+
 function isAdminSession() {
   return state.session?.authLevel === "admin";
 }
@@ -4054,6 +4193,28 @@ function setSectionPanelState(id, open) {
   } catch {}
 }
 
+function loadThemeEditorModelChoice(themeKey) {
+  if (!themeKey) {
+    return "";
+  }
+
+  try {
+    return String(localStorage.getItem(`${THEME_EDITOR_MODEL_STORAGE_PREFIX}${themeKey}`) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistThemeEditorModelChoice(themeKey, model) {
+  if (!themeKey) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(`${THEME_EDITOR_MODEL_STORAGE_PREFIX}${themeKey}`, String(model ?? "").trim());
+  } catch {}
+}
+
 function createEmptyUserForm() {
   return {
     mode: "create",
@@ -4117,6 +4278,7 @@ function createEmptyWidgetEditorState() {
     companyId: "",
     establishmentId: "",
     model: "gpt-5.4-nano",
+    activeKey: "",
     promptName: "",
     prompt: "",
     selectedPromptId: "",
@@ -4295,12 +4457,16 @@ function syncWidgetSetupSelections() {
 }
 
 function syncWidgetEditorSelections() {
+  const activeThemeKey = getActiveThemeEditorKey();
+  const previousThemeKey = state.widgetEditor.activeKey;
   const companies = getWidgetEditorCompanies();
   if (!companies.length) {
     state.widgetEditor.companyId = "";
     state.widgetEditor.establishmentId = "";
+    state.widgetEditor.activeKey = activeThemeKey;
     state.widgetEditor.draftCss = "";
     state.widgetEditor.attachments = [];
+    state.widgetEditor.model = loadThemeEditorModelChoice(activeThemeKey) || state.appSettings.openAiModel;
     return;
   }
 
@@ -4314,17 +4480,23 @@ function syncWidgetEditorSelections() {
   }
 
   const selectedEstablishment = getSelectedWidgetEditorEstablishment();
-  const savedCss = selectedEstablishment?.widgetTheme?.cssText ?? "";
-  if (!state.widgetEditor.draftCss || state.widgetEditor.establishmentId !== selectedEstablishment?.id) {
+  const savedCss = getSelectedThemeEditorCss(selectedEstablishment, activeThemeKey);
+  if (
+    !state.widgetEditor.draftCss ||
+    state.widgetEditor.establishmentId !== selectedEstablishment?.id ||
+    previousThemeKey !== activeThemeKey
+  ) {
     state.widgetEditor.draftCss = savedCss;
   }
-  if (!state.widgetEditor.model) {
-    state.widgetEditor.model = state.appSettings.openAiModel;
+  const persistedModel = loadThemeEditorModelChoice(activeThemeKey);
+  if (!state.widgetEditor.model || previousThemeKey !== activeThemeKey) {
+    state.widgetEditor.model = persistedModel || state.appSettings.openAiModel;
   }
+  state.widgetEditor.activeKey = activeThemeKey;
 
   if (
     state.widgetEditor.selectedPromptId &&
-    !state.widgetEditor.savedPrompts.some((prompt) => prompt.id === state.widgetEditor.selectedPromptId)
+    !getActiveThemeEditorPrompts().some((prompt) => prompt.id === state.widgetEditor.selectedPromptId)
   ) {
     state.widgetEditor.selectedPromptId = "";
     state.widgetEditor.promptName = "";
@@ -4377,7 +4549,7 @@ function clearBookingWorkspaceResults(options = {}) {
 }
 
 function loadWidgetEditorPrompt(promptId) {
-  const prompt = state.widgetEditor.savedPrompts.find((item) => item.id === promptId);
+  const prompt = getActiveThemeEditorPrompts().find((item) => item.id === promptId);
   if (!prompt) {
     return;
   }
@@ -4447,7 +4619,7 @@ function syncWidgetFromLocation() {
   const params = new URLSearchParams(location.search);
   const seatCountId = params.get("seatCountId") ?? "";
 
-  if (location.pathname !== "/widget") {
+  if (!isPublicBookingRoute()) {
     return;
   }
 
@@ -4469,7 +4641,7 @@ function syncWidgetFromLocation() {
 }
 
 function getWidgetPreviewCssOverride() {
-  if (location.pathname !== "/widget") {
+  if (!isPublicBookingRoute()) {
     return "";
   }
 
@@ -4539,6 +4711,7 @@ function getSeatCountById(seatCountId) {
             establishmentName: establishment.name,
             establishmentLabel: `${company.name} | ${establishment.name}`,
             widgetThemeCss: establishment.widgetTheme?.cssText ?? "",
+            pageViewThemeCss: establishment.pageViewTheme?.cssText ?? "",
           };
         }
       }
@@ -4591,14 +4764,32 @@ function getSelectedWidgetSeatCount() {
   return getSeatCountById(state.widget.seatCountId);
 }
 
-function getWidgetEditorPreviewUrl() {
-  const establishment = getSelectedWidgetEditorEstablishment();
-  const seatCountId = establishment?.seatCounts?.[0]?.id ?? "";
-  return seatCountId ? `${location.origin}/widget?seatCountId=${encodeURIComponent(seatCountId)}` : "";
+function getActiveThemeEditorPrompts() {
+  const activeKey = getActiveThemeEditorKey();
+  return state.widgetEditor.savedPrompts.filter((prompt) => prompt.widgetKey === activeKey);
 }
 
-function buildWidgetEditorPreviewUrl() {
-  const baseUrl = getWidgetEditorPreviewUrl();
+function getSelectedThemeEditorCss(establishment, themeKey = getActiveThemeEditorKey()) {
+  if (!establishment) {
+    return "";
+  }
+
+  return themeKey === "booking_page_view"
+    ? establishment.pageViewTheme?.cssText ?? ""
+    : establishment.widgetTheme?.cssText ?? "";
+}
+
+function getThemeEditorPreviewUrl() {
+  const editor = getThemeEditorConfig();
+  const establishment = getSelectedWidgetEditorEstablishment();
+  const seatCountId = establishment?.seatCounts?.[0]?.id ?? "";
+  return seatCountId
+    ? `${location.origin}${editor.previewPath}?seatCountId=${encodeURIComponent(seatCountId)}`
+    : "";
+}
+
+function buildThemeEditorPreviewUrl() {
+  const baseUrl = getThemeEditorPreviewUrl();
   if (!baseUrl) {
     return "";
   }
