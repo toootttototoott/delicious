@@ -1237,7 +1237,7 @@ function renderThemeEditorPage(editor) {
   const companies = getWidgetEditorCompanies();
   const establishments = getWidgetEditorEstablishments();
   const selectedEstablishment = getSelectedWidgetEditorEstablishment();
-  const previewUrl = getThemeEditorPreviewUrl();
+  const previewUrl = getThemeEditorPreviewUrl(editor.key);
   const uploadLimitLabel = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   const savedPrompts = getActiveThemeEditorPrompts();
   const hasSavedThemeEditorCss = hasThemeEditorSavedCss(selectedEstablishment, editor.key);
@@ -1416,7 +1416,7 @@ function renderThemeEditorPage(editor) {
           ` : ""}
           <div class="stack-inline">
             <button type="submit">Generate CSS</button>
-            ${previewUrl ? `<button type="button" class="ghost-button" data-action="openWidgetEditorPreview" data-url="${escapeHtml(previewUrl)}">Open preview</button>` : ""}
+            ${previewUrl ? `<button type="button" class="ghost-button" data-action="openWidgetEditorPreview" data-url="${escapeHtml(previewUrl)}">${escapeHtml(editor.previewLabel)}</button>` : ""}
           </div>
         </form>
         ${renderStatus("widgetEditor")}
@@ -1483,6 +1483,7 @@ function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
       workspaceMeta: "This CSS is scoped to the selected establishment's standalone booking page and applies across its seat-count calendars.",
       cssPlaceholder: ".page-view-theme-root { ... }",
       previewPath: "/page-view",
+      previewLabel: "Open page preview",
       generatedLabel: "Booking page CSS",
       savedLabel: "Booking page CSS",
     };
@@ -1501,6 +1502,7 @@ function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
     workspaceMeta: "This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.",
     cssPlaceholder: ".widget-theme-root { ... }",
     previewPath: "/widget",
+    previewLabel: "Open widget preview",
     generatedLabel: "Widget CSS",
     savedLabel: "Widget CSS",
   };
@@ -1530,13 +1532,18 @@ function renderPageViewPage() {
 
 function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, themeCss, title, copy }) {
   if (!state.widget.seatCountId || !getSelectedWidgetSeatCount()) {
+    const isPageView = themeRootClass === "page-view-theme-root";
     return `
       <section class="layout">
         <article class="panel full-width">
-          <p class="eyebrow">Widget view</p>
-          <h2>Widget not configured</h2>
-          <p class="meta">This booking widget needs a configured seatCountId in the URL.</p>
-          <p class="meta">Example: <code>/widget?seatCountId=...</code></p>
+          <p class="eyebrow">${isPageView ? "Booking page view" : "Widget view"}</p>
+          <h2>${isPageView ? "Booking page not configured" : "Widget not configured"}</h2>
+          <p class="meta">
+            ${isPageView
+              ? "This booking page needs a configured seatCountId in the URL."
+              : "This booking widget needs a configured seatCountId in the URL."}
+          </p>
+          <p class="meta">Example: <code>${isPageView ? "/page-view" : "/widget"}?seatCountId=...</code></p>
         </article>
       </section>
     `;
@@ -2948,13 +2955,16 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "openWidgetEditorPreview") {
-    const previewUrl = buildThemeEditorPreviewUrl();
+    const previewUrl = buildThemeEditorPreviewUrl(dataset.url);
     if (!previewUrl) {
       setStatus("widgetEditor", "error", "Select an establishment with at least one seat-count calendar first.");
       return;
     }
 
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
+    const previewWindow = window.open(previewUrl, "_blank", "noopener,noreferrer");
+    if (!previewWindow) {
+      navigate(previewUrl);
+    }
     return;
   }
 
@@ -4868,8 +4878,8 @@ function hasThemeEditorSavedCss(establishment, themeKey = getActiveThemeEditorKe
   return Boolean(getSelectedThemeEditorCss(establishment, themeKey).trim());
 }
 
-function getThemeEditorPreviewUrl() {
-  const editor = getThemeEditorConfig();
+function getThemeEditorPreviewUrl(themeKey = getActiveThemeEditorKey()) {
+  const editor = getThemeEditorConfig(themeKey);
   const establishment = getSelectedWidgetEditorEstablishment();
   const seatCountId = establishment?.seatCounts?.[0]?.id ?? "";
   return seatCountId
@@ -4877,8 +4887,7 @@ function getThemeEditorPreviewUrl() {
     : "";
 }
 
-function buildThemeEditorPreviewUrl() {
-  const baseUrl = getThemeEditorPreviewUrl();
+function buildThemeEditorPreviewUrl(baseUrl = getThemeEditorPreviewUrl()) {
   if (!baseUrl) {
     return "";
   }

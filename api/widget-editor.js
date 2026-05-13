@@ -50,7 +50,10 @@ export default async function handler(request, response) {
       }
 
       const theme = await upsertWidgetTheme(input.establishmentId, input.cssText, input.widgetKey);
-      sendJson(response, 200, { message: "Widget CSS saved.", theme });
+      sendJson(response, 200, {
+        message: input.widgetKey === "booking_page_view" ? "Booking page CSS saved." : "Widget CSS saved.",
+        theme,
+      });
       return;
     }
 
@@ -85,7 +88,7 @@ export default async function handler(request, response) {
       });
 
       sendJson(response, 200, {
-        message: "Widget CSS generated.",
+        message: input.widgetKey === "booking_page_view" ? "Booking page CSS generated." : "Widget CSS generated.",
         cssText: suggestion.cssText,
         model: suggestion.model,
         usage: suggestion.usage,
