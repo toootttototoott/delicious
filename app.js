@@ -1798,6 +1798,11 @@ function renderBookingsReportPanel() {
   return `
     <div class="stack">
       <div class="inner-panel">
+        <div class="stack-inline">
+          <button type="button" class="ghost-button" data-action="setBookingReportPreset" data-preset="today">Today</button>
+          <button type="button" class="ghost-button" data-action="setBookingReportPreset" data-preset="thisWeek">This week</button>
+          <button type="button" class="ghost-button" data-action="setBookingReportPreset" data-preset="thisMonth">This month</button>
+        </div>
         <div class="form-grid form-grid-three">
           <div class="field">
             <label for="booking-report-from-date">From date</label>
@@ -1888,6 +1893,7 @@ function renderBookingSearchResults() {
 
 function renderBookingReportResults() {
   const report = state.bookingWorkspace.report;
+  const dailySummary = buildBookingDaySummary(report.results);
 
   if (!report.hasRun) {
     return '<p class="meta">Run a report for the selected seat-count calendar and date/time range.</p>';
@@ -1905,6 +1911,32 @@ function renderBookingReportResults() {
       ${
         report.results.length
           ? `
+            <div class="report-table-wrap">
+              <table class="report-table report-summary-table">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Date</th>
+                    <th>Bookings</th>
+                    <th>Guests</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dailySummary
+                    .map(
+                      (day) => `
+                        <tr>
+                          <td>${escapeHtml(day.label)}</td>
+                          <td>${escapeHtml(day.date)}</td>
+                          <td>${escapeHtml(String(day.bookings))}</td>
+                          <td>${escapeHtml(String(day.guests))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
             <div class="report-table-wrap">
               <table class="report-table">
                 <thead>
@@ -2446,6 +2478,12 @@ async function handleAction(action, dataset) {
     return;
   }
 
+  if (action === "setBookingReportPreset") {
+    applyBookingReportPreset(dataset.preset);
+    render();
+    return;
+  }
+
   if (action === "downloadBookingReportCsv") {
     downloadBookingReportCsv();
     return;
@@ -2967,6 +3005,29 @@ async function runBookingReport() {
   render();
 }
 
+function applyBookingReportPreset(preset) {
+  const today = todayString();
+
+  if (preset === "today") {
+    state.bookingWorkspace.report.fromDate = today;
+    state.bookingWorkspace.report.toDate = today;
+    return;
+  }
+
+  if (preset === "thisWeek") {
+    const { start, end } = getWeekRange(today);
+    state.bookingWorkspace.report.fromDate = start;
+    state.bookingWorkspace.report.toDate = end;
+    return;
+  }
+
+  if (preset === "thisMonth") {
+    const currentMonth = monthKey(today);
+    state.bookingWorkspace.report.fromDate = monthStartDate(currentMonth);
+    state.bookingWorkspace.report.toDate = monthEndDate(currentMonth);
+  }
+}
+
 function downloadBookingReportCsv() {
   const report = state.bookingWorkspace.report;
   if (!report.results.length) {
@@ -3228,6 +3289,37 @@ function buildBookingReportFileName() {
   const start = report.fromDate || "report";
   const end = report.toDate || start;
   return `bookings-${start}-to-${end}.csv`;
+}
+
+function buildBookingDaySummary(bookings) {
+  const grouped = new Map();
+
+  for (const booking of bookings) {
+    const key = String(booking.bookingDate ?? "");
+    const current = grouped.get(key) ?? {
+      date: key,
+      label: formatWeekdayLabel(key),
+      bookings: 0,
+      guests: 0,
+    };
+    current.bookings += 1;
+    current.guests += Number(booking.partySize ?? 0);
+    grouped.set(key, current);
+  }
+
+  return Array.from(grouped.values()).sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function formatWeekdayLabel(date) {
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  if (!parsed) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-AU", {
+    weekday: "short",
+    timeZone: "UTC",
+  }).format(new Date(parsed));
 }
 
 function escapeCsvValue(value) {
@@ -4227,6 +4319,16 @@ function monthStartDate(key) {
 function monthEndDate(key) {
   const { year, monthIndex } = parseMonthKey(key);
   return toDateString(year, monthIndex, daysInMonth(key));
+}
+
+function getWeekRange(date) {
+  const cursor = new Date(`${date}T00:00:00Z`);
+  const weekday = (cursor.getUTCDay() + 6) % 7;
+  cursor.setUTCDate(cursor.getUTCDate() - weekday);
+  const start = cursor.toISOString().slice(0, 10);
+  cursor.setUTCDate(cursor.getUTCDate() + 6);
+  const end = cursor.toISOString().slice(0, 10);
+  return { start, end };
 }
 
 function daysInMonth(key) {

@@ -958,6 +958,17 @@ body.widget-embed .widget-calendar-panel {
   top: 0;
 }
 
+.report-summary-table {
+  min-width: 420px;
+}
+
+.report-summary-table td:nth-child(3),
+.report-summary-table td:nth-child(4),
+.report-summary-table th:nth-child(3),
+.report-summary-table th:nth-child(4) {
+  text-align: right;
+}
+
 .entity-select {
   padding-top: 4px;
 }
