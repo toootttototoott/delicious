@@ -4366,11 +4366,29 @@ function createEmptyWidgetEditorState() {
     model: "gpt-5.4-nano",
     activeKey: "",
     useSavedBaseline: false,
+    themeDrafts: createEmptyWidgetEditorThemeDrafts(),
     promptName: "",
     prompt: "",
     selectedPromptId: "",
     savedPrompts: [],
     draftCss: "",
+    attachments: [],
+    lastGeneratedModel: "",
+  };
+}
+
+function createEmptyWidgetEditorThemeDrafts() {
+  return {
+    booking_calendar: createEmptyWidgetEditorThemeDraft(),
+    booking_page_view: createEmptyWidgetEditorThemeDraft(),
+  };
+}
+
+function createEmptyWidgetEditorThemeDraft() {
+  return {
+    promptName: "",
+    prompt: "",
+    selectedPromptId: "",
     attachments: [],
     lastGeneratedModel: "",
   };
@@ -4553,6 +4571,12 @@ function syncWidgetEditorSelections() {
   const activeThemeKey = getActiveThemeEditorKey();
   const previousThemeKey = state.widgetEditor.activeKey;
   const previousEstablishmentId = state.widgetEditor.establishmentId;
+  if (previousThemeKey && previousThemeKey !== activeThemeKey) {
+    saveWidgetEditorThemeDraft(previousThemeKey);
+  }
+  if (previousThemeKey !== activeThemeKey) {
+    restoreWidgetEditorThemeDraft(activeThemeKey);
+  }
   const companies = getWidgetEditorCompanies();
   if (!companies.length) {
     state.widgetEditor.companyId = "";
@@ -4603,6 +4627,31 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.selectedPromptId = "";
     state.widgetEditor.promptName = "";
   }
+}
+
+function saveWidgetEditorThemeDraft(themeKey) {
+  const draft = ensureWidgetEditorThemeDraft(themeKey);
+  draft.promptName = state.widgetEditor.promptName;
+  draft.prompt = state.widgetEditor.prompt;
+  draft.selectedPromptId = state.widgetEditor.selectedPromptId;
+  draft.attachments = state.widgetEditor.attachments.map((attachment) => ({ ...attachment }));
+  draft.lastGeneratedModel = state.widgetEditor.lastGeneratedModel;
+}
+
+function restoreWidgetEditorThemeDraft(themeKey) {
+  const draft = ensureWidgetEditorThemeDraft(themeKey);
+  state.widgetEditor.promptName = draft.promptName;
+  state.widgetEditor.prompt = draft.prompt;
+  state.widgetEditor.selectedPromptId = draft.selectedPromptId;
+  state.widgetEditor.attachments = draft.attachments.map((attachment) => ({ ...attachment }));
+  state.widgetEditor.lastGeneratedModel = draft.lastGeneratedModel;
+}
+
+function ensureWidgetEditorThemeDraft(themeKey) {
+  if (!state.widgetEditor.themeDrafts[themeKey]) {
+    state.widgetEditor.themeDrafts[themeKey] = createEmptyWidgetEditorThemeDraft();
+  }
+  return state.widgetEditor.themeDrafts[themeKey];
 }
 
 function syncAdminCalendarSelections() {
