@@ -1881,7 +1881,7 @@ function renderBookingSearchResults() {
               data-time="${booking.bookingTime}"
             >
               <strong>${escapeHtml(booking.firstName)} ${escapeHtml(booking.lastName)}</strong>
-              <span>${escapeHtml(booking.bookingDate)} at ${escapeHtml(booking.bookingTime)}</span>
+              <span>${escapeHtml(booking.bookingDate)} at ${escapeHtml(formatDisplayTime(booking.bookingTime))}</span>
               <span>${escapeHtml(booking.email)} | ${escapeHtml(booking.phone)}</span>
             </button>
           `,
@@ -1957,7 +1957,7 @@ function renderBookingReportResults() {
                       (booking) => `
                         <tr>
                           <td>${escapeHtml(booking.bookingDate)}</td>
-                          <td>${escapeHtml(booking.bookingTime)}</td>
+                          <td>${escapeHtml(formatDisplayTime(booking.bookingTime))}</td>
                           <td>${escapeHtml(String(booking.partySize))}</td>
                           <td>${escapeHtml(booking.firstName)}</td>
                           <td>${escapeHtml(booking.lastName)}</td>
@@ -2115,7 +2115,7 @@ function renderWidgetModal(activeDate) {
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
           <p class="eyebrow">Booking details</p>
-          <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(state.widget.selectedTime)}</h3>
+          <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(formatDisplayTime(state.widget.selectedTime))}</h3>
           <p class="meta">${
             remainingSeats > 0
               ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available for this time`
@@ -2190,7 +2190,7 @@ function renderWidgetTimes(activeDate) {
           style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
           ${slot.available ? "" : "disabled"}
         >
-          ${slot.time}
+          ${escapeHtml(formatDisplayTime(slot.time))}
         </button>
       `;
     })
@@ -2210,7 +2210,7 @@ function renderAdminCalendarModal() {
           <p class="meta">
             ${
               activeDate.isOpen
-                ? `${escapeHtml(activeDate.openTime)} to ${escapeHtml(activeDate.closeTime)}`
+                ? `${escapeHtml(formatDisplayTime(activeDate.openTime))} to ${escapeHtml(formatDisplayTime(activeDate.closeTime))}`
                 : "Closed"
             }
           </p>
@@ -2230,7 +2230,7 @@ function renderAdminCalendarModal() {
       <div class="widget-modal-backdrop" data-action="closeAdminCalendarModal">
         <div class="widget-modal admin-booking-modal" data-modal-panel>
           <p class="eyebrow">${state.adminCalendar.editingBookingId ? "Edit booking" : "Add booking"}</p>
-          <h3>${escapeHtml(state.adminCalendar.selectedDate)} at ${escapeHtml(state.adminCalendar.selectedTime)}</h3>
+          <h3>${escapeHtml(state.adminCalendar.selectedDate)} at ${escapeHtml(formatDisplayTime(state.adminCalendar.selectedTime))}</h3>
           <form class="stack" data-admin-booking-form>
             <input type="hidden" name="bookingId" value="${escapeHtml(state.adminCalendar.editingBookingId)}" />
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.adminCalendar.seatCountId)}" />
@@ -2280,7 +2280,7 @@ function renderAdminSlot(slot) {
     <div class="nested-card">
       <div class="entity-row">
         <div>
-          <strong>${escapeHtml(slot.time)}</strong>
+          <strong>${escapeHtml(formatDisplayTime(slot.time))}</strong>
           <p class="meta">${slot.remaining}/${slot.capacity} seats left</p>
         </div>
         <button
@@ -3048,7 +3048,7 @@ function downloadBookingReportCsv() {
 
   const rows = report.results.map((booking) => [
     booking.bookingDate,
-    booking.bookingTime,
+    formatDisplayTime(booking.bookingTime),
     booking.partySize,
     booking.firstName,
     booking.lastName,
@@ -4446,7 +4446,7 @@ function getCalendarDayPresentation(availability) {
 function getCalendarDayHoursLabel(availability) {
   const openTime = String(availability?.openTime ?? "").trim();
   const closeTime = String(availability?.closeTime ?? "").trim();
-  return openTime && closeTime ? `${openTime}-${closeTime}` : "Open";
+  return openTime && closeTime ? formatDisplayTimeRange(openTime, closeTime) : "Open";
 }
 
 function getTimeSlotPresentation(slot) {
@@ -4496,6 +4496,30 @@ function getTimeSlotPresentation(slot) {
     seatLoad,
     status: "nearly-full",
   };
+}
+
+function formatDisplayTime(value) {
+  const trimmed = String(value ?? "").trim();
+  const match = trimmed.match(/^(\d{2}):(\d{2})$/);
+  if (!match) {
+    return trimmed;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = match[2];
+  if (hours > 23) {
+    return trimmed;
+  }
+
+  const suffix = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${minutes} ${suffix}`;
+}
+
+function formatDisplayTimeRange(startTime, endTime) {
+  const start = formatDisplayTime(startTime);
+  const end = formatDisplayTime(endTime);
+  return start && end ? `${start} - ${end}` : start || end;
 }
 
 function escapeHtml(value) {
