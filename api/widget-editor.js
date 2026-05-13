@@ -80,6 +80,7 @@ export default async function handler(request, response) {
         requestText: input.requestText,
         attachments: input.attachments,
         reasoningEffort: appSettings.openAiReasoningEffort,
+        maxOutputTokens: appSettings.widgetEditorMaxOutputTokens,
       });
 
       sendJson(response, 200, {

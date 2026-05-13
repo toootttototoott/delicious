@@ -9,6 +9,9 @@ const state = {
   appSettings: createDefaultAppSettings(),
   openAiModelDraft: createDefaultAppSettings().openAiModel,
   openAiReasoningEffortDraft: createDefaultAppSettings().openAiReasoningEffort,
+  widgetEditorMaxOutputTokensDraft: String(
+    createDefaultAppSettings().widgetEditorMaxOutputTokens,
+  ),
   widgetEditorUploadLimitDraftMb: formatMegabytes(
     createDefaultAppSettings().widgetEditorUploadLimitBytes,
   ),
@@ -229,6 +232,11 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-widget-editor-max-output-tokens-draft]")) {
+    state.widgetEditorMaxOutputTokensDraft = event.target.value;
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-upload-limit-draft]")) {
     state.widgetEditorUploadLimitDraftMb = event.target.value;
     return;
@@ -429,6 +437,7 @@ async function loadSession() {
     state.appSettings = createDefaultAppSettings();
     state.openAiModelDraft = state.appSettings.openAiModel;
     state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+    state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
     state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   }
   pruneSelections();
@@ -451,6 +460,7 @@ async function loadAdminData() {
   state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(payload.widgetEditorPrompts);
   state.openAiModelDraft = state.appSettings.openAiModel;
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
   state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   pruneSelections();
   syncWidgetSetupSelections();
@@ -1282,6 +1292,20 @@ function renderOpenAiSettingsForm() {
           data-widget-editor-upload-limit-draft
         />
         <p class="meta">Practical max is 3.0 MB total. The hosted function request body is capped at 4.5 MB and attachments expand when base64-encoded.</p>
+      </div>
+      <div class="field">
+        <label for="widget-editor-max-output-tokens">Widget CSS max output tokens</label>
+        <input
+          id="widget-editor-max-output-tokens"
+          name="widgetEditorMaxOutputTokens"
+          type="number"
+          min="1000"
+          max="50000"
+          step="1000"
+          value="${escapeHtml(state.widgetEditorMaxOutputTokensDraft)}"
+          data-widget-editor-max-output-tokens-draft
+        />
+        <p class="meta">High reasoning models may need far more token budget. OpenAI recommends starting with about 25,000 when experimenting with reasoning runs.</p>
       </div>
       <div class="stack-inline">
         <button type="submit">Save settings</button>
@@ -2601,6 +2625,7 @@ async function handleOpenAiSettingsSubmit(form) {
   state.appSettings = data.appSettings ?? createDefaultAppSettings();
   state.openAiModelDraft = state.appSettings.openAiModel;
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
   state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   state.widgetEditor.model = state.appSettings.openAiModel;
   setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
@@ -2613,8 +2638,11 @@ async function handleWidgetEditorGenerate(form) {
     return;
   }
 
-  if (!state.widgetEditor.attachments.length) {
-    setStatus("widgetEditor", "error", "Attach at least one reference file before generating CSS.");
+  if (
+    !state.widgetEditor.attachments.length &&
+    !confirm("No reference files are attached. Continue and generate CSS from the prompt only?")
+  ) {
+    setStatus("widgetEditor", "info", "Generation cancelled. Add files if you want visual references.");
     return;
   }
 
@@ -2825,6 +2853,7 @@ async function logout() {
   state.appSettings = createDefaultAppSettings();
   state.openAiModelDraft = state.appSettings.openAiModel;
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
   state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   state.adminAvailability = [];
   state.selectedUserIds.clear();
@@ -3207,6 +3236,7 @@ function createDefaultAppSettings() {
   return {
     openAiModel: "gpt-5.4-nano",
     openAiReasoningEffort: "",
+    widgetEditorMaxOutputTokens: 25_000,
     widgetEditorUploadLimitBytes: 2_500_000,
   };
 }
