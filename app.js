@@ -147,6 +147,9 @@ window.addEventListener("popstate", () => {
   }
 
   syncWidgetFromLocation();
+  if (location.pathname === "/widget-editor" || location.pathname === "/page-view-editor") {
+    syncWidgetEditorSelections();
+  }
   render();
 });
 
@@ -595,6 +598,9 @@ function navigate(target) {
   }
 
   syncWidgetFromLocation();
+  if (location.pathname === "/widget-editor" || location.pathname === "/page-view-editor") {
+    syncWidgetEditorSelections();
+  }
   render();
 }
 
@@ -602,6 +608,10 @@ function render() {
   redirectSignedInUserFromLogin();
   applyRouteChrome();
   syncLiveRefresh();
+
+  if (location.pathname === "/widget-editor" || location.pathname === "/page-view-editor") {
+    syncWidgetEditorSelections();
+  }
 
   const app = document.querySelector("#app");
   const topnav = document.querySelector(".topnav");
@@ -2961,10 +2971,7 @@ async function handleAction(action, dataset) {
       return;
     }
 
-    const previewWindow = window.open(previewUrl, "_blank", "noopener,noreferrer");
-    if (!previewWindow) {
-      navigate(previewUrl);
-    }
+    openThemeEditorPreview(previewUrl);
     return;
   }
 
@@ -4908,6 +4915,17 @@ function buildThemeEditorPreviewUrl(baseUrl = getThemeEditorPreviewUrl()) {
 
   const separator = baseUrl.includes("?") ? "&" : "?";
   return `${baseUrl}${separator}previewToken=${encodeURIComponent(token)}`;
+}
+
+function openThemeEditorPreview(previewUrl) {
+  const anchor = document.createElement("a");
+  anchor.href = previewUrl;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 function getAdminSelectedBooking() {
