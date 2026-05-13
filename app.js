@@ -1,5 +1,6 @@
 const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
 const THEME_EDITOR_MODEL_STORAGE_PREFIX = "booking-theme-editor:model:";
+const THEME_EDITOR_REASONING_STORAGE_PREFIX = "booking-theme-editor:reasoning:";
 const THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX = "booking-theme-editor:saved-baseline:";
 
 const state = {
@@ -286,6 +287,12 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-widget-editor-model]")) {
     state.widgetEditor.model = event.target.value;
     persistThemeEditorModelChoice(getActiveThemeEditorKey(), event.target.value);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-reasoning]")) {
+    state.widgetEditor.reasoningEffort = event.target.value;
+    persistThemeEditorReasoningChoice(getActiveThemeEditorKey(), event.target.value);
     return;
   }
 
@@ -1311,6 +1318,12 @@ function renderThemeEditorPage(editor) {
               <label for="widget-editor-model">Model</label>
               <select id="widget-editor-model" name="model" data-widget-editor-model>
                 ${renderOpenAiModelOptions(state.widgetEditor.model)}
+              </select>
+            </div>
+            <div class="field">
+              <label for="widget-editor-reasoning">Reasoning</label>
+              <select id="widget-editor-reasoning" name="reasoningEffort" data-widget-editor-reasoning>
+                ${renderOpenAiReasoningEffortOptions(state.widgetEditor.reasoningEffort)}
               </select>
             </div>
             <div class="field">
@@ -3670,6 +3683,8 @@ async function handleOpenAiSettingsSubmit(form) {
   state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   state.widgetEditor.model =
     loadThemeEditorModelChoice(getActiveThemeEditorKey()) || state.appSettings.openAiModel;
+  state.widgetEditor.reasoningEffort =
+    loadThemeEditorReasoningChoice(getActiveThemeEditorKey()) || state.appSettings.openAiReasoningEffort;
   setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
 }
 
@@ -3853,6 +3868,7 @@ async function handleWidgetEditorGenerate(form) {
   payload.establishmentId = state.widgetEditor.establishmentId;
   payload.currentCss = state.widgetEditor.draftCss;
   payload.currentContentText = state.widgetEditor.draftContentText;
+  payload.reasoningEffort = state.widgetEditor.reasoningEffort;
   payload.requestText = state.widgetEditor.prompt;
   payload.attachments = state.widgetEditor.attachments;
   payload.useSavedCssBaseline = state.widgetEditor.useSavedBaseline;
@@ -4553,6 +4569,18 @@ function loadThemeEditorSavedBaselineChoice(themeKey) {
   }
 }
 
+function loadThemeEditorReasoningChoice(themeKey) {
+  if (!themeKey) {
+    return "";
+  }
+
+  try {
+    return String(localStorage.getItem(`${THEME_EDITOR_REASONING_STORAGE_PREFIX}${themeKey}`) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function persistThemeEditorModelChoice(themeKey, model) {
   if (!themeKey) {
     return;
@@ -4560,6 +4588,19 @@ function persistThemeEditorModelChoice(themeKey, model) {
 
   try {
     localStorage.setItem(`${THEME_EDITOR_MODEL_STORAGE_PREFIX}${themeKey}`, String(model ?? "").trim());
+  } catch {}
+}
+
+function persistThemeEditorReasoningChoice(themeKey, reasoningEffort) {
+  if (!themeKey) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      `${THEME_EDITOR_REASONING_STORAGE_PREFIX}${themeKey}`,
+      String(reasoningEffort ?? "").trim(),
+    );
   } catch {}
 }
 
@@ -4639,6 +4680,7 @@ function createEmptyWidgetEditorState() {
     companyId: "",
     establishmentId: "",
     model: "gpt-5.4-nano",
+    reasoningEffort: "",
     activeKey: "",
     useSavedBaseline: false,
     themeDrafts: createEmptyWidgetEditorThemeDrafts(),
@@ -4863,6 +4905,8 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.draftCss = "";
     state.widgetEditor.attachments = [];
     state.widgetEditor.model = loadThemeEditorModelChoice(activeThemeKey) || state.appSettings.openAiModel;
+    state.widgetEditor.reasoningEffort =
+      loadThemeEditorReasoningChoice(activeThemeKey) || state.appSettings.openAiReasoningEffort;
     state.widgetEditor.useSavedBaseline = loadThemeEditorSavedBaselineChoice(activeThemeKey);
     return;
   }
@@ -4889,9 +4933,13 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.draftCss = savedCss;
   }
   const persistedModel = loadThemeEditorModelChoice(activeThemeKey);
+  const persistedReasoningEffort = loadThemeEditorReasoningChoice(activeThemeKey);
   const persistedSavedBaseline = loadThemeEditorSavedBaselineChoice(activeThemeKey);
   if (!state.widgetEditor.model || previousThemeKey !== activeThemeKey) {
     state.widgetEditor.model = persistedModel || state.appSettings.openAiModel;
+  }
+  if (previousThemeKey !== activeThemeKey) {
+    state.widgetEditor.reasoningEffort = persistedReasoningEffort || state.appSettings.openAiReasoningEffort;
   }
   if (previousThemeKey !== activeThemeKey || previousEstablishmentId !== selectedEstablishment?.id) {
     state.widgetEditor.useSavedBaseline = hasSavedCss ? persistedSavedBaseline : false;

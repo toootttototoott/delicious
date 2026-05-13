@@ -89,7 +89,7 @@ export default async function handler(request, response) {
         requestText: input.requestText,
         attachments: input.attachments,
         preserveExistingCss: input.useSavedCssBaseline,
-        reasoningEffort: appSettings.openAiReasoningEffort,
+        reasoningEffort: input.reasoningEffort,
         maxOutputTokens: appSettings.widgetEditorMaxOutputTokens,
       });
 
