@@ -1,6 +1,7 @@
 const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
 
 const state = {
+  booting: true,
   session: null,
   users: [],
   companies: [],
@@ -421,38 +422,43 @@ async function boot() {
     history.replaceState({}, "", "/login");
   }
 
-  const sessionResult = await Promise.allSettled([loadSession()]);
-  if (sessionResult[0]?.status === "rejected") {
-    setStatus("auth", "error", "Session could not be loaded.");
-  }
-
-  redirectSignedInUserFromLogin();
-
-  if (location.pathname === "/widget") {
-    const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
-    if (widgetResult[0]?.status === "rejected") {
-      setStatus("widget", "error", "Widget data could not be loaded.");
-    }
-  }
-
-  if (
-    (location.pathname === "/settings" ||
-      location.pathname === "/widget-setup" ||
-      location.pathname === "/widget-editor") &&
-    state.session?.authLevel === "admin"
-  ) {
-    const adminResult = await Promise.allSettled([loadAdminData()]);
-    if (adminResult[0]?.status === "rejected") {
-      setStatus("auth", "error", "Admin data could not be loaded.");
-    }
-  }
-
-  syncWidgetFromLocation();
-  if (state.session?.authLevel === "admin") {
-    await refreshAdminAvailability();
-  }
-
   render();
+
+  try {
+    const sessionResult = await Promise.allSettled([loadSession()]);
+    if (sessionResult[0]?.status === "rejected") {
+      setStatus("auth", "error", "Session could not be loaded.");
+    }
+
+    redirectSignedInUserFromLogin();
+
+    if (location.pathname === "/widget") {
+      const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
+      if (widgetResult[0]?.status === "rejected") {
+        setStatus("widget", "error", "Widget data could not be loaded.");
+      }
+    }
+
+    if (
+      (location.pathname === "/settings" ||
+        location.pathname === "/widget-setup" ||
+        location.pathname === "/widget-editor") &&
+      state.session?.authLevel === "admin"
+    ) {
+      const adminResult = await Promise.allSettled([loadAdminData()]);
+      if (adminResult[0]?.status === "rejected") {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      }
+    }
+
+    syncWidgetFromLocation();
+    if (state.session?.authLevel === "admin") {
+      await refreshAdminAvailability();
+    }
+  } finally {
+    state.booting = false;
+    render();
+  }
 }
 
 async function loadSession() {
@@ -548,6 +554,16 @@ function render() {
   applyRouteChrome();
   syncLiveRefresh();
 
+  const app = document.querySelector("#app");
+  const topnav = document.querySelector(".topnav");
+
+  if (state.booting) {
+    topnav.innerHTML = "";
+    app.innerHTML = renderBootPage();
+    scheduleWidgetHeightSync();
+    return;
+  }
+
   if (
     needsAdminRedirect("/settings") ||
     needsAdminRedirect("/widget-setup") ||
@@ -559,8 +575,6 @@ function render() {
     }
   }
 
-  const app = document.querySelector("#app");
-  const topnav = document.querySelector(".topnav");
   topnav.innerHTML = renderTopnav();
   app.innerHTML = (routes.get(location.pathname) ?? renderLoginPage)();
   scheduleWidgetHeightSync();
@@ -573,7 +587,7 @@ function applyRouteChrome() {
   const masthead = document.querySelector(".masthead");
   const isWidgetRoute = location.pathname === "/widget";
   const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
-  const hideChrome = isWidgetRoute || isLoginRoute;
+  const hideChrome = state.booting || isWidgetRoute || isLoginRoute;
 
   root.classList.toggle("route-widget", isWidgetRoute);
   root.classList.toggle("route-login", isLoginRoute);
@@ -671,6 +685,30 @@ function renderSectionPanel({ id = "", eyebrow, title, meta = "", badge = "", co
       </summary>
       <div class="section-body">${content}</div>
     </details>
+  `;
+}
+
+function renderBootPage() {
+  return `
+    <section class="login-layout">
+      <article class="panel login-panel login-main-panel">
+        <p class="eyebrow">Loading</p>
+        <h2>Checking your session</h2>
+        <p class="meta">One moment while access is confirmed and the page is prepared.</p>
+        <div class="stack">
+          <div class="status info">Checking saved sign-in details...</div>
+          <button type="button" class="login-submit" disabled>Please wait...</button>
+        </div>
+      </article>
+      <article class="panel login-side">
+        <p class="eyebrow">Startup</p>
+        <h3>Preparing the app</h3>
+        <div class="stack">
+          <p class="meta">If you already have an active session, you will be taken straight through automatically.</p>
+          <p class="meta">If not, the sign-in form will appear here as soon as the check finishes.</p>
+        </div>
+      </article>
+    </section>
   `;
 }
 
