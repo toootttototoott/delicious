@@ -1236,9 +1236,11 @@ function renderPageViewEditorPage() {
 function renderThemeEditorPage(editor) {
   const companies = getWidgetEditorCompanies();
   const establishments = getWidgetEditorEstablishments();
+  const selectedEstablishment = getSelectedWidgetEditorEstablishment();
   const previewUrl = getThemeEditorPreviewUrl();
   const uploadLimitLabel = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   const savedPrompts = getActiveThemeEditorPrompts();
+  const hasSavedThemeEditorCss = hasThemeEditorSavedCss(selectedEstablishment, editor.key);
 
   return `
     <section class="layout">
@@ -1333,12 +1335,17 @@ function renderThemeEditorPage(editor) {
                   id="widget-editor-use-saved-baseline"
                   type="checkbox"
                   ${state.widgetEditor.useSavedBaseline ? "checked" : ""}
+                  ${hasSavedThemeEditorCss ? "" : "disabled"}
                   data-widget-editor-use-saved-baseline
                 />
                 Work from the most recent saved CSS only
               </label>
               <p class="meta">
-                Follow-up generations will preserve the latest saved CSS as the baseline and only apply the requested change. If nothing has been saved yet, the baseline is empty.
+                ${
+                  hasSavedThemeEditorCss
+                    ? "Follow-up generations will preserve the latest saved CSS as the baseline and only apply the requested change."
+                    : "This option becomes available after you save CSS once."
+                }
               </p>
             </div>
           </div>
@@ -3578,6 +3585,9 @@ async function handleWidgetEditorGenerate(form) {
     state.widgetEditor.draftCss = data.cssText ?? "";
     state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
     state.widgetEditor.model = payload.model ?? state.widgetEditor.model;
+    if (state.widgetEditor.useSavedBaseline) {
+      state.widgetEditor.prompt = "";
+    }
     setStatus(
       "widgetEditor",
       "success",
@@ -4237,17 +4247,17 @@ function loadThemeEditorModelChoice(themeKey) {
 
 function loadThemeEditorSavedBaselineChoice(themeKey) {
   if (!themeKey) {
-    return true;
+    return false;
   }
 
   try {
     const stored = localStorage.getItem(`${THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX}${themeKey}`);
     if (stored === null) {
-      return true;
+      return false;
     }
     return stored === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -4338,7 +4348,7 @@ function createEmptyWidgetEditorState() {
     establishmentId: "",
     model: "gpt-5.4-nano",
     activeKey: "",
-    useSavedBaseline: true,
+    useSavedBaseline: false,
     promptName: "",
     prompt: "",
     selectedPromptId: "",
@@ -4525,6 +4535,7 @@ function syncWidgetSetupSelections() {
 function syncWidgetEditorSelections() {
   const activeThemeKey = getActiveThemeEditorKey();
   const previousThemeKey = state.widgetEditor.activeKey;
+  const previousEstablishmentId = state.widgetEditor.establishmentId;
   const companies = getWidgetEditorCompanies();
   if (!companies.length) {
     state.widgetEditor.companyId = "";
@@ -4548,9 +4559,10 @@ function syncWidgetEditorSelections() {
 
   const selectedEstablishment = getSelectedWidgetEditorEstablishment();
   const savedCss = getSelectedThemeEditorCss(selectedEstablishment, activeThemeKey);
+  const hasSavedCss = hasThemeEditorSavedCss(selectedEstablishment, activeThemeKey);
   if (
     !state.widgetEditor.draftCss ||
-    state.widgetEditor.establishmentId !== selectedEstablishment?.id ||
+    previousEstablishmentId !== selectedEstablishment?.id ||
     previousThemeKey !== activeThemeKey
   ) {
     state.widgetEditor.draftCss = savedCss;
@@ -4560,8 +4572,10 @@ function syncWidgetEditorSelections() {
   if (!state.widgetEditor.model || previousThemeKey !== activeThemeKey) {
     state.widgetEditor.model = persistedModel || state.appSettings.openAiModel;
   }
-  if (previousThemeKey !== activeThemeKey) {
-    state.widgetEditor.useSavedBaseline = persistedSavedBaseline;
+  if (previousThemeKey !== activeThemeKey || previousEstablishmentId !== selectedEstablishment?.id) {
+    state.widgetEditor.useSavedBaseline = hasSavedCss ? persistedSavedBaseline : false;
+  } else if (!hasSavedCss && state.widgetEditor.useSavedBaseline) {
+    state.widgetEditor.useSavedBaseline = false;
   }
   state.widgetEditor.activeKey = activeThemeKey;
 
@@ -4848,6 +4862,10 @@ function getSelectedThemeEditorCss(establishment, themeKey = getActiveThemeEdito
   return themeKey === "booking_page_view"
     ? establishment.pageViewTheme?.cssText ?? ""
     : establishment.widgetTheme?.cssText ?? "";
+}
+
+function hasThemeEditorSavedCss(establishment, themeKey = getActiveThemeEditorKey()) {
+  return Boolean(getSelectedThemeEditorCss(establishment, themeKey).trim());
 }
 
 function getThemeEditorPreviewUrl() {
