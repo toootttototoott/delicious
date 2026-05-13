@@ -434,7 +434,7 @@ document.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("paste", async (event) => {
-  if (location.pathname !== "/widget-editor") {
+  if (location.pathname !== "/widget-editor" && location.pathname !== "/page-view-editor") {
     return;
   }
 
