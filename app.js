@@ -273,6 +273,11 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-widget-editor-content]")) {
+    state.widgetEditor.draftContentText = event.target.value;
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-css]")) {
     state.widgetEditor.draftCss = event.target.value;
     return;
@@ -1438,6 +1443,23 @@ function renderThemeEditorPage(editor) {
         <form class="stack" data-widget-editor-save-form>
           <input type="hidden" name="widgetKey" value="${escapeHtml(editor.key)}" />
           <input type="hidden" name="establishmentId" value="${escapeHtml(state.widgetEditor.establishmentId)}" />
+          ${
+            editor.key === "booking_page_view"
+              ? `
+                <div class="field">
+                  <label for="widget-editor-content">Page content JSON</label>
+                  <textarea
+                    id="widget-editor-content"
+                    name="contentText"
+                    class="code-input"
+                    rows="16"
+                    placeholder="${escapeHtml(editor.contentPlaceholder)}"
+                    data-widget-editor-content
+                  >${escapeHtml(state.widgetEditor.draftContentText)}</textarea>
+                </div>
+              `
+              : ""
+          }
           <div class="field">
             <label for="widget-editor-css">CSS</label>
             <textarea
@@ -1490,7 +1512,8 @@ function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
       promptNamePlaceholder: "Example: Warm coastal booking page",
       promptPlaceholder: "Example: Build a fuller booking page with a soft hero area, stronger typography, larger calendar framing, and a more editorial page layout.",
       workspaceTitle: "Booking page CSS",
-      workspaceMeta: "This CSS is scoped to the selected establishment's standalone booking page and applies across its seat-count calendars.",
+      workspaceMeta: "The generator builds a structured booking page plus scoped CSS for the selected establishment. The calendar is always rendered within this page.",
+      contentPlaceholder: '{\n  "kicker": "Reservations",\n  "title": "Book a table",\n  "intro": "Describe the page here.",\n  "sections": []\n}',
       cssPlaceholder: ".page-view-theme-root { ... }",
       previewPath: "/page-view",
       previewLabel: "Open page preview",
@@ -1510,6 +1533,7 @@ function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
     promptPlaceholder: "Example: Match the restaurant site. Use the uploaded hero image colors, a warmer cream background, sharper card corners, and bolder selected-day states.",
     workspaceTitle: "Booking calendar CSS",
     workspaceMeta: "This CSS is scoped to the selected establishment's booking widget and applies across its seat-count calendars.",
+    contentPlaceholder: "",
     cssPlaceholder: ".widget-theme-root { ... }",
     previewPath: "/widget",
     previewLabel: "Open widget preview",
@@ -1519,28 +1543,34 @@ function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
 }
 
 function renderWidgetPage() {
+  const previewPayload = getThemeEditorPreviewPayload();
   return renderBookingExperiencePage({
     themeRootClass: "widget-theme-root",
     layoutClass: "widget-layout",
     panelClass: "widget-calendar-panel",
-    themeCss: getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.widgetThemeCss || "",
+    themeCss: previewPayload.cssText || getSelectedWidgetSeatCount()?.widgetThemeCss || "",
     title: "",
     copy: "",
+    pageContent: null,
   });
 }
 
 function renderPageViewPage() {
+  const previewPayload = getThemeEditorPreviewPayload();
   return renderBookingExperiencePage({
     themeRootClass: "page-view-theme-root",
     layoutClass: "page-view-layout",
     panelClass: "page-view-panel",
-    themeCss: getWidgetPreviewCssOverride() || getSelectedWidgetSeatCount()?.pageViewThemeCss || "",
-    title: "Book a table",
-    copy: "Choose a day, pick a time, and confirm your booking details.",
+    themeCss: previewPayload.cssText || getSelectedWidgetSeatCount()?.pageViewThemeCss || "",
+    title: "",
+    copy: "",
+    pageContent:
+      parsePageViewContentText(previewPayload.contentText) ||
+      parsePageViewContentText(getSelectedWidgetSeatCount()?.pageViewThemeContentText),
   });
 }
 
-function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, themeCss, title, copy }) {
+function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, themeCss, title, copy, pageContent }) {
   if (!state.widget.seatCountId || !getSelectedWidgetSeatCount()) {
     const isPageView = themeRootClass === "page-view-theme-root";
     return `
@@ -1560,29 +1590,256 @@ function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, 
   }
 
   const activeDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate) ?? null;
+  const isPageView = themeRootClass === "page-view-theme-root";
+  const resolvedPageContent = isPageView ? pageContent || getDefaultPageViewContent() : null;
 
   return `
     ${themeCss ? `<style>${escapeStyleTagContent(themeCss)}</style>` : ""}
     <section class="layout ${escapeHtml(layoutClass)} ${escapeHtml(themeRootClass)}">
       <article class="panel full-width ${escapeHtml(panelClass)}">
         ${
-          title
-            ? `
-              <div class="page-view-header">
-                <p class="eyebrow page-view-kicker">Book now</p>
-                <h1 class="page-view-title">${escapeHtml(title)}</h1>
-                <p class="meta page-view-copy">${escapeHtml(copy)}</p>
-              </div>
+          isPageView
+            ? renderPageViewLayout(resolvedPageContent)
+            : `
+              ${renderStatus("widget")}
+              ${renderCalendarNavigator()}
+              ${renderWidgetCalendar()}
             `
-            : ""
         }
-        ${renderStatus("widget")}
-        ${renderCalendarNavigator()}
-        ${renderWidgetCalendar()}
       </article>
       ${renderWidgetModal(activeDate)}
     </section>
   `;
+}
+
+function renderPageViewLayout(pageContent) {
+  const content = pageContent || getDefaultPageViewContent();
+  const hasHeroSection = content.sections.some((section) => section.type === "hero");
+
+  return `
+    ${
+      !hasHeroSection && (content.kicker || content.title || content.intro)
+        ? `
+          <div class="page-view-header">
+            ${content.kicker ? `<p class="eyebrow page-view-kicker">${escapeHtml(content.kicker)}</p>` : ""}
+            ${content.title ? `<h1 class="page-view-title">${escapeHtml(content.title)}</h1>` : ""}
+            ${content.intro ? `<p class="meta page-view-copy">${escapeHtml(content.intro)}</p>` : ""}
+          </div>
+        `
+        : ""
+    }
+    <div class="page-view-sections">
+      ${content.sections.map((section) => renderPageViewSection(section)).join("")}
+    </div>
+  `;
+}
+
+function renderPageViewSection(section) {
+  if (!section || typeof section !== "object") {
+    return "";
+  }
+
+  if (section.type === "hero") {
+    return `
+      <section class="page-view-section page-view-section-hero ${section.align === "center" ? "is-centered" : ""}">
+        <div class="page-view-section-copy">
+          ${section.eyebrow ? `<p class="eyebrow page-view-kicker">${escapeHtml(section.eyebrow)}</p>` : ""}
+          ${section.title ? `<h1 class="page-view-title">${escapeHtml(section.title)}</h1>` : ""}
+          ${section.copy ? `<p class="meta page-view-copy">${escapeHtml(section.copy)}</p>` : ""}
+        </div>
+        ${
+          section.imageUrl
+            ? `
+              <div class="page-view-section-media">
+                <img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || section.title || "Booking page image")}" />
+              </div>
+            `
+            : ""
+        }
+      </section>
+    `;
+  }
+
+  if (section.type === "text") {
+    return `
+      <section class="page-view-section page-view-section-text ${section.align === "center" ? "is-centered" : ""}">
+        ${section.eyebrow ? `<p class="eyebrow page-view-kicker">${escapeHtml(section.eyebrow)}</p>` : ""}
+        ${section.title ? `<h2>${escapeHtml(section.title)}</h2>` : ""}
+        ${section.copy ? `<p class="meta page-view-copy">${escapeHtml(section.copy)}</p>` : ""}
+      </section>
+    `;
+  }
+
+  if (section.type === "split") {
+    return `
+      <section class="page-view-section page-view-section-split ${section.imagePosition === "left" ? "media-left" : "media-right"}">
+        ${
+          section.imageUrl
+            ? `
+              <div class="page-view-section-media">
+                <img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || section.title || "Booking page image")}" />
+              </div>
+            `
+            : ""
+        }
+        <div class="page-view-section-copy">
+          ${section.eyebrow ? `<p class="eyebrow page-view-kicker">${escapeHtml(section.eyebrow)}</p>` : ""}
+          ${section.title ? `<h2>${escapeHtml(section.title)}</h2>` : ""}
+          ${section.copy ? `<p class="meta page-view-copy">${escapeHtml(section.copy)}</p>` : ""}
+        </div>
+      </section>
+    `;
+  }
+
+  if (section.type === "highlights") {
+    return `
+      <section class="page-view-section page-view-section-highlights">
+        ${section.eyebrow ? `<p class="eyebrow page-view-kicker">${escapeHtml(section.eyebrow)}</p>` : ""}
+        ${section.title ? `<h2>${escapeHtml(section.title)}</h2>` : ""}
+        <div class="page-view-highlight-grid">
+          ${(section.items ?? [])
+            .map(
+              (item) => `
+                <article class="page-view-highlight-card">
+                  ${item.title ? `<h3>${escapeHtml(item.title)}</h3>` : ""}
+                  ${item.copy ? `<p class="meta">${escapeHtml(item.copy)}</p>` : ""}
+                </article>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  if (section.type === "image") {
+    return `
+      <section class="page-view-section page-view-section-image">
+        ${
+          section.imageUrl
+            ? `<img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || "Booking page image")}" />`
+            : ""
+        }
+        ${section.caption ? `<p class="meta page-view-copy">${escapeHtml(section.caption)}</p>` : ""}
+      </section>
+    `;
+  }
+
+  if (section.type === "quote") {
+    return `
+      <section class="page-view-section page-view-section-quote">
+        ${section.quote ? `<blockquote class="page-view-quote">${escapeHtml(section.quote)}</blockquote>` : ""}
+        ${section.attribution ? `<p class="meta">${escapeHtml(section.attribution)}</p>` : ""}
+      </section>
+    `;
+  }
+
+  if (section.type === "calendar") {
+    return `
+      <section class="page-view-section page-view-section-calendar">
+        ${section.eyebrow ? `<p class="eyebrow page-view-kicker">${escapeHtml(section.eyebrow)}</p>` : ""}
+        ${section.title ? `<h2>${escapeHtml(section.title)}</h2>` : ""}
+        ${section.copy ? `<p class="meta page-view-copy">${escapeHtml(section.copy)}</p>` : ""}
+        ${renderStatus("widget")}
+        ${renderCalendarNavigator()}
+        ${renderWidgetCalendar()}
+      </section>
+    `;
+  }
+
+  return "";
+}
+
+function parsePageViewContentText(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return normalizePageViewContent(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function getDefaultPageViewContent() {
+  return {
+    kicker: "Reservations",
+    title: "Book a table",
+    intro: "Choose a day, pick a time, and confirm your booking details.",
+    sections: [
+      {
+        type: "calendar",
+        eyebrow: "Book now",
+        title: "Select your booking time",
+        copy: "Choose a date and time to continue.",
+      },
+    ],
+  };
+}
+
+function normalizePageViewContent(value) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const sections = Array.isArray(input.sections)
+    ? input.sections.map(normalizePageViewSection).filter(Boolean)
+    : [];
+
+  if (!sections.some((section) => section.type === "calendar")) {
+    sections.push(getDefaultPageViewContent().sections[0]);
+  }
+
+  return {
+    kicker: String(input.kicker ?? "").trim(),
+    title: String(input.title ?? "").trim() || "Book a table",
+    intro: String(input.intro ?? "").trim(),
+    sections,
+  };
+}
+
+function normalizePageViewSection(value) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const type = String(input.type ?? "").trim().toLowerCase();
+  if (!["hero", "text", "split", "highlights", "image", "quote", "calendar"].includes(type)) {
+    return null;
+  }
+
+  if (type === "highlights") {
+    return {
+      type,
+      eyebrow: String(input.eyebrow ?? "").trim(),
+      title: String(input.title ?? "").trim(),
+      items: Array.isArray(input.items)
+        ? input.items
+            .map((item) => ({
+              title: String(item?.title ?? "").trim(),
+              copy: String(item?.copy ?? "").trim(),
+            }))
+            .filter((item) => item.title || item.copy)
+        : [],
+    };
+  }
+
+  if (type === "quote") {
+    return {
+      type,
+      quote: String(input.quote ?? "").trim(),
+      attribution: String(input.attribution ?? "").trim(),
+    };
+  }
+
+  return {
+    type,
+    eyebrow: String(input.eyebrow ?? "").trim(),
+    title: String(input.title ?? "").trim(),
+    copy: String(input.copy ?? "").trim(),
+    align: String(input.align ?? "").trim().toLowerCase() === "center" ? "center" : "left",
+    imageUrl: String(input.imageUrl ?? "").trim(),
+    imageAlt: String(input.imageAlt ?? "").trim(),
+    imagePosition: String(input.imagePosition ?? "").trim().toLowerCase() === "left" ? "left" : "right",
+    caption: String(input.caption ?? "").trim(),
+  };
 }
 
 function renderSessionSummary(compact = false) {
@@ -2070,7 +2327,7 @@ function renderOpeningHoursEditor(establishment) {
           </label>
           <input
             type="time"
-            step="3600"
+            step="900"
             data-hours-start
             data-establishment-id="${establishment.id}"
             data-weekday="${day.weekdayIndex}"
@@ -2078,7 +2335,7 @@ function renderOpeningHoursEditor(establishment) {
           />
           <input
             type="time"
-            step="3600"
+            step="900"
             data-hours-end
             data-establishment-id="${establishment.id}"
             data-weekday="${day.weekdayIndex}"
@@ -2285,6 +2542,7 @@ function renderBookingsReportPanel() {
             <input
               id="booking-report-from-time"
               type="time"
+              step="900"
               value="${escapeHtml(report.fromTime)}"
               data-booking-report-from-time
             />
@@ -2294,6 +2552,7 @@ function renderBookingsReportPanel() {
             <input
               id="booking-report-to-time"
               type="time"
+              step="900"
               value="${escapeHtml(report.toTime)}"
               data-booking-report-to-time
             />
@@ -3003,8 +3262,16 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "resetWidgetCssDraft") {
-    state.widgetEditor.draftCss = getSelectedThemeEditorCss(getSelectedWidgetEditorEstablishment()) ?? "";
-    setStatus("widgetEditor", "info", "Draft reset to the last saved CSS.");
+    const establishment = getSelectedWidgetEditorEstablishment();
+    state.widgetEditor.draftCss = getSelectedThemeEditorCss(establishment) ?? "";
+    state.widgetEditor.draftContentText = getSelectedThemeEditorContentText(establishment) ?? "";
+    setStatus(
+      "widgetEditor",
+      "info",
+      getActiveThemeEditorKey() === "booking_page_view"
+        ? "Draft reset to the last saved booking page content and CSS."
+        : "Draft reset to the last saved CSS.",
+    );
     return;
   }
 
@@ -3585,6 +3852,7 @@ async function handleWidgetEditorGenerate(form) {
   payload.action = "generateWidgetCss";
   payload.establishmentId = state.widgetEditor.establishmentId;
   payload.currentCss = state.widgetEditor.draftCss;
+  payload.currentContentText = state.widgetEditor.draftContentText;
   payload.requestText = state.widgetEditor.prompt;
   payload.attachments = state.widgetEditor.attachments;
   payload.useSavedCssBaseline = state.widgetEditor.useSavedBaseline;
@@ -3600,6 +3868,9 @@ async function handleWidgetEditorGenerate(form) {
     );
     const data = await postJson("/api/widget-editor", payload, "widgetEditor");
     state.widgetEditor.draftCss = data.cssText ?? "";
+    if (typeof data.contentText === "string") {
+      state.widgetEditor.draftContentText = data.contentText;
+    }
     state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
     state.widgetEditor.model = payload.model ?? state.widgetEditor.model;
     if (state.widgetEditor.useSavedBaseline) {
@@ -3627,11 +3898,15 @@ async function handleWidgetEditorSave(form) {
   payload.action = "saveWidgetCss";
   payload.establishmentId = state.widgetEditor.establishmentId;
   payload.cssText = state.widgetEditor.draftCss;
+  payload.contentText = state.widgetEditor.draftContentText;
 
   setStatus("widgetEditor", "info", `Saving ${editor.savedLabel}...`, { processing: true });
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
   await refreshAdminState();
   state.widgetEditor.draftCss = data.theme?.cssText ?? state.widgetEditor.draftCss;
+  if (typeof data.theme?.contentText === "string") {
+    state.widgetEditor.draftContentText = data.theme.contentText;
+  }
   setStatus("widgetEditor", "success", data.message ?? `${editor.savedLabel} saved.`);
 }
 
@@ -4371,6 +4646,7 @@ function createEmptyWidgetEditorState() {
     prompt: "",
     selectedPromptId: "",
     savedPrompts: [],
+    draftContentText: "",
     draftCss: "",
     attachments: [],
     lastGeneratedModel: "",
@@ -4389,6 +4665,7 @@ function createEmptyWidgetEditorThemeDraft() {
     promptName: "",
     prompt: "",
     selectedPromptId: "",
+    draftContentText: "",
     attachments: [],
     lastGeneratedModel: "",
   };
@@ -4582,6 +4859,7 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.companyId = "";
     state.widgetEditor.establishmentId = "";
     state.widgetEditor.activeKey = activeThemeKey;
+    state.widgetEditor.draftContentText = "";
     state.widgetEditor.draftCss = "";
     state.widgetEditor.attachments = [];
     state.widgetEditor.model = loadThemeEditorModelChoice(activeThemeKey) || state.appSettings.openAiModel;
@@ -4599,13 +4877,15 @@ function syncWidgetEditorSelections() {
   }
 
   const selectedEstablishment = getSelectedWidgetEditorEstablishment();
+  const savedContentText = getSelectedThemeEditorContentText(selectedEstablishment, activeThemeKey);
   const savedCss = getSelectedThemeEditorCss(selectedEstablishment, activeThemeKey);
   const hasSavedCss = hasThemeEditorSavedCss(selectedEstablishment, activeThemeKey);
   if (
-    !state.widgetEditor.draftCss ||
+    (!state.widgetEditor.draftCss && !state.widgetEditor.draftContentText) ||
     previousEstablishmentId !== selectedEstablishment?.id ||
     previousThemeKey !== activeThemeKey
   ) {
+    state.widgetEditor.draftContentText = savedContentText;
     state.widgetEditor.draftCss = savedCss;
   }
   const persistedModel = loadThemeEditorModelChoice(activeThemeKey);
@@ -4634,6 +4914,7 @@ function saveWidgetEditorThemeDraft(themeKey) {
   draft.promptName = state.widgetEditor.promptName;
   draft.prompt = state.widgetEditor.prompt;
   draft.selectedPromptId = state.widgetEditor.selectedPromptId;
+  draft.draftContentText = state.widgetEditor.draftContentText;
   draft.attachments = state.widgetEditor.attachments.map((attachment) => ({ ...attachment }));
   draft.lastGeneratedModel = state.widgetEditor.lastGeneratedModel;
 }
@@ -4643,6 +4924,7 @@ function restoreWidgetEditorThemeDraft(themeKey) {
   state.widgetEditor.promptName = draft.promptName;
   state.widgetEditor.prompt = draft.prompt;
   state.widgetEditor.selectedPromptId = draft.selectedPromptId;
+  state.widgetEditor.draftContentText = draft.draftContentText;
   state.widgetEditor.attachments = draft.attachments.map((attachment) => ({ ...attachment }));
   state.widgetEditor.lastGeneratedModel = draft.lastGeneratedModel;
 }
@@ -4792,32 +5074,7 @@ function syncWidgetFromLocation() {
 }
 
 function getWidgetPreviewCssOverride() {
-  if (!isPublicBookingRoute()) {
-    return "";
-  }
-
-  const params = new URLSearchParams(location.search);
-  const token = String(params.get("previewToken") ?? "").trim();
-  if (!token) {
-    return "";
-  }
-
-  try {
-    const raw = localStorage.getItem(token);
-    if (!raw) {
-      return "";
-    }
-
-    const payload = JSON.parse(raw);
-    if (Date.now() - Number(payload.createdAt ?? 0) > 1000 * 60 * 60 * 4) {
-      localStorage.removeItem(token);
-      return "";
-    }
-
-    return String(payload.cssText ?? "");
-  } catch {
-    return "";
-  }
+  return getThemeEditorPreviewPayload().cssText;
 }
 
 function getWidgetSetupEstablishments() {
@@ -4863,6 +5120,7 @@ function getSeatCountById(seatCountId) {
             establishmentLabel: `${company.name} | ${establishment.name}`,
             widgetThemeCss: establishment.widgetTheme?.cssText ?? "",
             pageViewThemeCss: establishment.pageViewTheme?.cssText ?? "",
+            pageViewThemeContentText: establishment.pageViewTheme?.contentText ?? "",
           };
         }
       }
@@ -4930,6 +5188,16 @@ function getSelectedThemeEditorCss(establishment, themeKey = getActiveThemeEdito
     : establishment.widgetTheme?.cssText ?? "";
 }
 
+function getSelectedThemeEditorContentText(establishment, themeKey = getActiveThemeEditorKey()) {
+  if (!establishment) {
+    return "";
+  }
+
+  return themeKey === "booking_page_view"
+    ? establishment.pageViewTheme?.contentText ?? ""
+    : establishment.widgetTheme?.contentText ?? "";
+}
+
 function hasThemeEditorSavedCss(establishment, themeKey = getActiveThemeEditorKey()) {
   return Boolean(getSelectedThemeEditorCss(establishment, themeKey).trim());
 }
@@ -4955,6 +5223,7 @@ function buildThemeEditorPreviewUrl(baseUrl = getThemeEditorPreviewUrl()) {
       token,
       JSON.stringify({
         cssText: state.widgetEditor.draftCss ?? "",
+        contentText: state.widgetEditor.draftContentText ?? "",
         createdAt: Date.now(),
       }),
     );
@@ -4975,6 +5244,38 @@ function openThemeEditorPreview(previewUrl) {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function getThemeEditorPreviewPayload() {
+  if (!isPublicBookingRoute()) {
+    return { cssText: "", contentText: "" };
+  }
+
+  const params = new URLSearchParams(location.search);
+  const token = String(params.get("previewToken") ?? "").trim();
+  if (!token) {
+    return { cssText: "", contentText: "" };
+  }
+
+  try {
+    const raw = localStorage.getItem(token);
+    if (!raw) {
+      return { cssText: "", contentText: "" };
+    }
+
+    const payload = JSON.parse(raw);
+    if (Date.now() - Number(payload.createdAt ?? 0) > 1000 * 60 * 60 * 4) {
+      localStorage.removeItem(token);
+      return { cssText: "", contentText: "" };
+    }
+
+    return {
+      cssText: String(payload.cssText ?? ""),
+      contentText: String(payload.contentText ?? ""),
+    };
+  } catch {
+    return { cssText: "", contentText: "" };
+  }
 }
 
 function getAdminSelectedBooking() {

@@ -49,7 +49,12 @@ export default async function handler(request, response) {
         return;
       }
 
-      const theme = await upsertWidgetTheme(input.establishmentId, input.cssText, input.widgetKey);
+      const theme = await upsertWidgetTheme(
+        input.establishmentId,
+        input.cssText,
+        input.widgetKey,
+        input.contentText,
+      );
       sendJson(response, 200, {
         message: input.widgetKey === "booking_page_view" ? "Booking page CSS saved." : "Widget CSS saved.",
         theme,
@@ -80,6 +85,7 @@ export default async function handler(request, response) {
         establishmentName: context.establishmentName,
         widgetKey: input.widgetKey,
         currentCss: input.useSavedCssBaseline ? context.cssText : input.currentCss,
+        currentContentText: input.useSavedCssBaseline ? context.contentText : input.currentContentText,
         requestText: input.requestText,
         attachments: input.attachments,
         preserveExistingCss: input.useSavedCssBaseline,
@@ -90,6 +96,7 @@ export default async function handler(request, response) {
       sendJson(response, 200, {
         message: input.widgetKey === "booking_page_view" ? "Booking page CSS generated." : "Widget CSS generated.",
         cssText: suggestion.cssText,
+        contentText: suggestion.contentText ?? "",
         model: suggestion.model,
         usage: suggestion.usage,
         responseId: suggestion.responseId,
