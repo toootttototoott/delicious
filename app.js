@@ -1444,7 +1444,7 @@ function renderThemeEditorPage(editor) {
 
 function renderProminentProcessStatus(scope) {
   const status = state.statuses[scope];
-  if (!status?.message || status.kind !== "info") {
+  if (!status?.message || status.processing !== true) {
     return "";
   }
 
@@ -3572,6 +3572,7 @@ async function handleWidgetEditorGenerate(form) {
       state.widgetEditor.useSavedBaseline
         ? "Generating CSS from the latest saved baseline..."
         : "Generating CSS from the current draft...",
+      { processing: true },
     );
     const data = await postJson("/api/widget-editor", payload, "widgetEditor");
     state.widgetEditor.draftCss = data.cssText ?? "";
@@ -3600,7 +3601,7 @@ async function handleWidgetEditorSave(form) {
   payload.establishmentId = state.widgetEditor.establishmentId;
   payload.cssText = state.widgetEditor.draftCss;
 
-  setStatus("widgetEditor", "info", `Saving ${editor.savedLabel}...`);
+  setStatus("widgetEditor", "info", `Saving ${editor.savedLabel}...`, { processing: true });
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
   await refreshAdminState();
   state.widgetEditor.draftCss = data.theme?.cssText ?? state.widgetEditor.draftCss;
@@ -3632,6 +3633,7 @@ async function handleWidgetEditorPromptSave() {
     "widgetEditor",
     "info",
     state.widgetEditor.selectedPromptId ? "Updating saved prompt..." : "Saving prompt...",
+    { processing: true },
   );
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
   state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
@@ -3653,7 +3655,7 @@ async function handleWidgetEditorPromptDelete(promptId) {
     return;
   }
 
-  setStatus("widgetEditor", "info", "Deleting saved prompt...");
+  setStatus("widgetEditor", "info", "Deleting saved prompt...", { processing: true });
   const data = await postJson(
     "/api/widget-editor",
     { action: "deletePrompt", widgetKey: getActiveThemeEditorKey(), promptId },
@@ -3695,7 +3697,7 @@ async function handleWidgetEditorFiles(fileList, options = {}) {
     return;
   }
 
-  setStatus("widgetEditor", "info", `Loading ${sourceLabel} reference files...`);
+  setStatus("widgetEditor", "info", `Loading ${sourceLabel} reference files...`, { processing: true });
   const loadedAttachments = await Promise.all(
     files.map(async (file) => ({
       name: file.name,
@@ -4347,8 +4349,14 @@ function createEmptyWidgetEditorState() {
   };
 }
 
-function setStatus(scope, kind, message) {
-  state.statuses[scope] = message ? { kind, message } : null;
+function setStatus(scope, kind, message, options = {}) {
+  state.statuses[scope] = message
+    ? {
+        kind,
+        message,
+        processing: options.processing === true,
+      }
+    : null;
   render();
 }
 
