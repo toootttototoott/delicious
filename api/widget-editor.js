@@ -55,16 +55,16 @@ export default async function handler(request, response) {
     }
 
     if (action === "generateWidgetCss") {
-      const input = sanitizeWidgetEditorRequest(body);
+      const appSettings = await getAppSettings();
+      const input = sanitizeWidgetEditorRequest(body, {
+        maxAttachmentBytes: appSettings.widgetEditorUploadLimitBytes,
+      });
       if (input.error) {
         sendJson(response, 400, { error: input.error });
         return;
       }
 
-      const [context, appSettings] = await Promise.all([
-        getWidgetEditorContext(input.establishmentId, input.widgetKey),
-        getAppSettings(),
-      ]);
+      const context = await getWidgetEditorContext(input.establishmentId, input.widgetKey);
 
       if (!context) {
         sendJson(response, 404, { error: "Selected establishment was not found." });
@@ -79,6 +79,7 @@ export default async function handler(request, response) {
         currentCss: input.currentCss,
         requestText: input.requestText,
         attachments: input.attachments,
+        reasoningEffort: appSettings.openAiReasoningEffort,
       });
 
       sendJson(response, 200, {

@@ -17,7 +17,7 @@ export default async function handler(request, response) {
   }
 
   const body = await readBody(request);
-  if (body.action !== "updateOpenAiModel") {
+  if (body.action !== "updateOpenAiSettings" && body.action !== "updateOpenAiModel") {
     sendJson(response, 400, { error: "Unknown action." });
     return;
   }
@@ -29,5 +29,5 @@ export default async function handler(request, response) {
   }
 
   const appSettings = await updateAppSettings(input);
-  sendJson(response, 200, { message: "OpenAI model updated.", appSettings });
+  sendJson(response, 200, { message: "OpenAI settings updated.", appSettings });
 }

@@ -4,7 +4,11 @@ const state = {
   companies: [],
   userCount: 0,
   appSettings: createDefaultAppSettings(),
-  openAiModelDraft: "gpt-5.4-nano",
+  openAiModelDraft: createDefaultAppSettings().openAiModel,
+  openAiReasoningEffortDraft: createDefaultAppSettings().openAiReasoningEffort,
+  widgetEditorUploadLimitDraftMb: formatMegabytes(
+    createDefaultAppSettings().widgetEditorUploadLimitBytes,
+  ),
   widgetCatalog: [],
   widgetAvailability: [],
   statuses: {
@@ -211,6 +215,16 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-openai-reasoning-effort-draft]")) {
+    state.openAiReasoningEffortDraft = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-upload-limit-draft]")) {
+    state.widgetEditorUploadLimitDraftMb = event.target.value;
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-prompt]")) {
     state.widgetEditor.prompt = event.target.value;
     return;
@@ -391,6 +405,8 @@ async function loadSession() {
     state.companies = [];
     state.appSettings = createDefaultAppSettings();
     state.openAiModelDraft = state.appSettings.openAiModel;
+    state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+    state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   }
   pruneSelections();
   syncWidgetSetupSelections();
@@ -411,6 +427,8 @@ async function loadAdminData() {
   state.appSettings = payload.appSettings ?? createDefaultAppSettings();
   state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(payload.widgetEditorPrompts);
   state.openAiModelDraft = state.appSettings.openAiModel;
+  state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   pruneSelections();
   syncWidgetSetupSelections();
   syncWidgetEditorSelections();
@@ -679,13 +697,13 @@ function renderSettingsPage() {
       ${renderPageHeader({
         eyebrow: "Admin",
         title: "Operations and setup",
-        meta: "Manage access, companies, establishments, seat-count calendars, bookings, and the default widget editor model.",
+        meta: "Manage access, companies, establishments, seat-count calendars, bookings, and the default widget editor OpenAI settings.",
         actions: renderSessionSummary(true),
       })}
       ${renderSectionPanel({
         eyebrow: "System",
-        title: "Widget editor model",
-        meta: "Default model used when generating establishment-specific CSS.",
+        title: "Widget editor OpenAI settings",
+        meta: "Set the default model, upload limit, and reasoning effort used when generating establishment-specific CSS.",
         open: true,
         content: `
           <div class="section-content-grid section-content-grid-compact">
@@ -945,6 +963,7 @@ function renderWidgetEditorPage() {
   const companies = getWidgetEditorCompanies();
   const establishments = getWidgetEditorEstablishments();
   const previewUrl = getWidgetEditorPreviewUrl();
+  const uploadLimitLabel = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
 
   return `
     <section class="layout">
@@ -1010,6 +1029,7 @@ function renderWidgetEditorPage() {
                 multiple
                 data-widget-editor-files
               />
+              <p class="meta">Current total upload limit: ${escapeHtml(uploadLimitLabel)} MB.</p>
             </div>
             <div class="field">
               <label for="widget-editor-prompt-name">Prompt name</label>
@@ -1204,8 +1224,33 @@ function renderOpenAiSettingsForm() {
           ${renderOpenAiModelOptions(state.openAiModelDraft)}
         </select>
       </div>
+      <div class="field">
+        <label for="openai-reasoning-effort">Reasoning effort for widget CSS generation</label>
+        <select
+          id="openai-reasoning-effort"
+          name="openAiReasoningEffort"
+          data-openai-reasoning-effort-draft
+        >
+          ${renderOpenAiReasoningEffortOptions(state.openAiReasoningEffortDraft)}
+        </select>
+        <p class="meta">Uses the Responses API <code>reasoning.effort</code> setting. Some models support only a subset of values.</p>
+      </div>
+      <div class="field">
+        <label for="widget-editor-upload-limit">Widget reference upload limit (MB)</label>
+        <input
+          id="widget-editor-upload-limit"
+          name="widgetEditorUploadLimitMb"
+          type="number"
+          min="0.5"
+          max="3"
+          step="0.1"
+          value="${escapeHtml(state.widgetEditorUploadLimitDraftMb)}"
+          data-widget-editor-upload-limit-draft
+        />
+        <p class="meta">Practical max is 3.0 MB total. The hosted function request body is capped at 4.5 MB and attachments expand when base64-encoded.</p>
+      </div>
       <div class="stack-inline">
-        <button type="submit">Save model</button>
+        <button type="submit">Save settings</button>
       </div>
     </form>
   `;
@@ -1227,6 +1272,28 @@ function renderOpenAiModelOptions(selectedModel) {
       (model) => `
         <option value="${model}" ${selectedModel === model ? "selected" : ""}>
           ${escapeHtml(model)}
+        </option>
+      `,
+    )
+    .join("");
+}
+
+function renderOpenAiReasoningEffortOptions(selectedValue) {
+  const options = [
+    { value: "", label: "Model default" },
+    { value: "none", label: "None" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+  ];
+
+  return options
+    .map(
+      (option) => `
+        <option value="${option.value}" ${selectedValue === option.value ? "selected" : ""}>
+          ${escapeHtml(option.label)}
         </option>
       `,
     )
@@ -2493,14 +2560,16 @@ async function handleAdminBookingSubmit(form) {
 
 async function handleOpenAiSettingsSubmit(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
-  payload.action = "updateOpenAiModel";
+  payload.action = "updateOpenAiSettings";
 
-  setStatus("openaiSettings", "info", "Saving OpenAI model...");
+  setStatus("openaiSettings", "info", "Saving OpenAI settings...");
   const data = await postJson("/api/app-settings", payload, "openaiSettings");
   state.appSettings = data.appSettings ?? createDefaultAppSettings();
   state.openAiModelDraft = state.appSettings.openAiModel;
+  state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   state.widgetEditor.model = state.appSettings.openAiModel;
-  setStatus("openaiSettings", "success", data.message ?? "OpenAI model updated.");
+  setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
 }
 
 async function handleWidgetEditorGenerate(form) {
@@ -2619,6 +2688,8 @@ async function handleWidgetEditorPromptDelete(promptId) {
 async function handleWidgetEditorFiles(fileList, options = {}) {
   const append = options.append === true;
   const sourceLabel = options.sourceLabel ?? "uploaded";
+  const uploadLimitBytes = state.appSettings.widgetEditorUploadLimitBytes;
+  const uploadLimitLabel = formatMegabytes(uploadLimitBytes);
 
   if (!fileList?.length) {
     if (!append) {
@@ -2634,8 +2705,12 @@ async function handleWidgetEditorFiles(fileList, options = {}) {
   );
   const newBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
   const totalBytes = existingApproxBytes + newBytes;
-  if (totalBytes > 2_500_000) {
-    setStatus("widgetEditor", "error", "Keep uploaded reference files under roughly 2.5 MB total.");
+  if (totalBytes > uploadLimitBytes) {
+    setStatus(
+      "widgetEditor",
+      "error",
+      `Keep uploaded reference files under roughly ${uploadLimitLabel} MB total.`,
+    );
     return;
   }
 
@@ -2704,6 +2779,10 @@ function approximateDataUrlBytes(dataUrl) {
   return Math.floor((base64.length * 3) / 4);
 }
 
+function formatMegabytes(bytes) {
+  return (Number(bytes ?? 0) / 1_000_000).toFixed(1).replace(/\.0$/, "");
+}
+
 async function logout() {
   await fetch("/api/logout", { method: "POST" });
   state.session = null;
@@ -2711,6 +2790,8 @@ async function logout() {
   state.companies = [];
   state.appSettings = createDefaultAppSettings();
   state.openAiModelDraft = state.appSettings.openAiModel;
+  state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
+  state.widgetEditorUploadLimitDraftMb = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   state.adminAvailability = [];
   state.selectedUserIds.clear();
   state.selectedCompanyIds.clear();
@@ -3026,6 +3107,8 @@ function createEmptyCompanyForm() {
 function createDefaultAppSettings() {
   return {
     openAiModel: "gpt-5.4-nano",
+    openAiReasoningEffort: "",
+    widgetEditorUploadLimitBytes: 2_500_000,
   };
 }
 
