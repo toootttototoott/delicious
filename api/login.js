@@ -38,7 +38,7 @@ export default async function handler(request, response) {
 
     if (error.code === "DECRYPT_FAILED") {
       sendJson(response, 500, {
-        error: "Stored user data could not be decrypted. Check ENCRYPT_KEY for this Vercel environment.",
+        error: "Stored user data could not be decrypted. Check ENCRYPT_KEY and any legacy ENCRYPT_KEY_FALLBACKS for this environment.",
       });
       return;
     }
