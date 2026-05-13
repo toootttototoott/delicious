@@ -583,6 +583,7 @@ function navigate(target) {
 }
 
 function render() {
+  redirectSignedInUserFromLogin();
   applyRouteChrome();
   syncLiveRefresh();
 
@@ -965,62 +966,77 @@ function renderScopedSettingsPage() {
     state.userForm.establishmentId = state.session?.establishmentId ?? "";
   }
 
+  const rolePrefix = `scoped-${state.session?.authLevel ?? "user"}`;
+
   return `
     <section class="layout">
-      <article class="panel full-width">
-        <div class="two-column-layout">
-          <div class="inner-panel">
-            <p class="eyebrow">Access</p>
-            <h2>${isManagerSession() ? "Manager booking workspace" : "Staff booking workspace"}</h2>
-            <p class="meta">This view is limited to your assigned establishment.</p>
-            ${renderSessionSummary(true)}
+      ${renderSectionPanel({
+        id: `${rolePrefix}-overview`,
+        eyebrow: "Access",
+        title: isManagerSession() ? "Manager booking workspace" : "Staff booking workspace",
+        meta: "This view is limited to your assigned establishment.",
+        open: false,
+        content: `
+          <div class="two-column-layout">
+            <div class="inner-panel">
+              <p class="eyebrow">Session</p>
+              <h3>Signed-in account</h3>
+              ${renderSessionSummary(true)}
+            </div>
+            <div class="inner-panel">
+              <p class="eyebrow">Scope</p>
+              <h3>${escapeHtml(getEstablishmentLabel(state.session?.establishmentId) || "No establishment assigned")}</h3>
+              <p class="meta">${
+                isManagerSession()
+                  ? "Managers can run reports for this establishment and add staff accounts assigned here."
+                  : "Staff can manage bookings for this establishment."
+              }</p>
+            </div>
           </div>
-          <div class="inner-panel">
-            <p class="eyebrow">Scope</p>
-            <h3>${escapeHtml(getEstablishmentLabel(state.session?.establishmentId) || "No establishment assigned")}</h3>
-            <p class="meta">${
-              isManagerSession()
-                ? "Managers can run reports for this establishment and add staff accounts assigned here."
-                : "Staff can manage bookings for this establishment."
-            }</p>
-          </div>
-        </div>
-      </article>
+        `,
+      })}
       ${
         isManagerSession()
-          ? `
-            <article class="panel full-width">
-              <div class="two-column-layout">
-                <div class="inner-panel">
-                  <p class="eyebrow">Staff access</p>
-                  <h3>Create staff member</h3>
-                  <p class="meta">New accounts created here are always assigned to this establishment.</p>
-                  ${renderUserForm(false, {
-                    restrictToStaff: true,
-                    hideAssignmentFields: true,
-                    hideRoleField: true,
-                  })}
-                  ${renderStatus("users")}
+          ? renderSectionPanel({
+              id: `${rolePrefix}-staff`,
+              eyebrow: "Staff access",
+              title: "Create and view staff",
+              meta: "New staff accounts created here are always assigned to this establishment.",
+              open: false,
+              content: `
+                <div class="two-column-layout">
+                  <div class="inner-panel">
+                    <p class="eyebrow">Create</p>
+                    <h3>Create staff member</h3>
+                    <p class="meta">New accounts created here are always assigned to this establishment.</p>
+                    ${renderUserForm(false, {
+                      restrictToStaff: true,
+                      hideAssignmentFields: true,
+                      hideRoleField: true,
+                    })}
+                    ${renderStatus("users")}
+                  </div>
+                  <div class="inner-panel">
+                    <p class="eyebrow">Current staff</p>
+                    <h3>Assigned to this establishment</h3>
+                    <p class="meta">Managers can view the staff accounts linked to this location.</p>
+                    <div class="users">${renderUsers()}</div>
+                  </div>
                 </div>
-                <div class="inner-panel">
-                  <p class="eyebrow">Current staff</p>
-                  <h3>Assigned to this establishment</h3>
-                  <p class="meta">Managers can view the staff accounts linked to this location.</p>
-                  <div class="users">${renderUsers()}</div>
-                </div>
-              </div>
-            </article>
-          `
+              `,
+            })
           : ""
       }
-      <article class="panel full-width">
-        <p class="eyebrow">Bookings</p>
-        <h3>Booking calendar</h3>
-        <p class="meta">Inspect seat availability, manage bookings by day, and ${
+      ${renderSectionPanel({
+        id: `${rolePrefix}-bookings`,
+        eyebrow: "Bookings",
+        title: "Booking calendar",
+        meta: `Inspect seat availability, manage bookings by day, and ${
           canAccessBookingReports() ? "run reports for this establishment." : "search customer bookings."
-        }</p>
-        <div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>
-      </article>
+        }`,
+        open: false,
+        content: `<div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>`,
+      })}
     </section>
   `;
 }
