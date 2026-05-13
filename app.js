@@ -42,6 +42,7 @@ const state = {
     establishmentId: "",
     seatCountId: "",
   },
+  bookingWorkspace: createBookingWorkspaceState(),
   widgetEditor: createEmptyWidgetEditorState(),
   widget: {
     seatCountId: "",
@@ -346,6 +347,7 @@ document.addEventListener("change", async (event) => {
 
   if (event.target.matches("[data-booking-company]")) {
     state.adminCalendar.companyId = event.target.value;
+    clearBookingWorkspaceResults();
     syncAdminCalendarSelections();
     refreshAdminAvailability().then(render);
     return;
@@ -353,6 +355,7 @@ document.addEventListener("change", async (event) => {
 
   if (event.target.matches("[data-booking-establishment]")) {
     state.adminCalendar.establishmentId = event.target.value;
+    clearBookingWorkspaceResults();
     syncAdminCalendarSelections();
     refreshAdminAvailability().then(render);
     return;
@@ -360,8 +363,34 @@ document.addEventListener("change", async (event) => {
 
   if (event.target.matches("[data-booking-seat-count]")) {
     state.adminCalendar.seatCountId = event.target.value;
+    clearBookingWorkspaceResults();
     syncAdminCalendarSelections();
     refreshAdminAvailability().then(render);
+    return;
+  }
+
+  if (event.target.matches("[data-booking-search-query]")) {
+    state.bookingWorkspace.searchQuery = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-booking-report-from-date]")) {
+    state.bookingWorkspace.report.fromDate = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-booking-report-to-date]")) {
+    state.bookingWorkspace.report.toDate = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-booking-report-from-time]")) {
+    state.bookingWorkspace.report.fromTime = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-booking-report-to-time]")) {
+    state.bookingWorkspace.report.toTime = event.target.value;
   }
 });
 
@@ -733,12 +762,6 @@ function renderSettingsPage() {
 
   return `
     <section class="layout">
-      ${renderPageHeader({
-        eyebrow: "Admin",
-        title: "Operations and setup",
-        meta: "Manage access, companies, establishments, seat-count calendars, bookings, and the default widget editor OpenAI settings.",
-        actions: renderSessionSummary(true),
-      })}
       ${renderSectionPanel({
         id: "settings-system",
         eyebrow: "System",
@@ -1666,6 +1689,8 @@ function renderBookingsPanel() {
   const companies = getAdminCalendarCompanies();
   const establishments = getAdminCalendarEstablishments();
   const seatCounts = getAdminCalendarSeatCounts();
+  const activeTab = state.bookingWorkspace.activeTab;
+  const seatCountReady = Boolean(companies.length && establishments.length && seatCounts.length);
 
   return `
     <div class="stack">
@@ -1715,6 +1740,22 @@ function renderBookingsPanel() {
           </select>
         </div>
       </div>
+      <div class="tab-row">
+        <button
+          type="button"
+          class="${activeTab === "calendar" ? "tab-button is-active" : "tab-button"}"
+          data-action="showBookingCalendarTab"
+        >
+          Booking calendar
+        </button>
+        <button
+          type="button"
+          class="${activeTab === "reports" ? "tab-button is-active" : "tab-button"}"
+          data-action="showBookingReportsTab"
+        >
+          Reports
+        </button>
+      </div>
       ${renderStatus("bookings")}
       ${
         !companies.length
@@ -1723,13 +1764,183 @@ function renderBookingsPanel() {
             ? '<div class="empty">Create an establishment and opening hours first.</div>'
             : !seatCounts.length
               ? '<div class="empty">Create at least one seat-count calendar for this establishment.</div>'
-              : `
-                <div class="booking-calendar-shell">
-                  ${renderAdminCalendarNavigator()}
-                  ${renderAdminCalendar()}
-                </div>
-                ${renderAdminCalendarModal()}
-              `
+              : activeTab === "reports"
+                ? renderBookingsReportPanel()
+                : `
+                  <div class="stack">
+                    <div class="inner-panel booking-search-panel">
+                      <div class="list-toolbar">
+                        <input
+                          type="search"
+                          placeholder="Search by first name, last name, email, or phone"
+                          value="${escapeHtml(state.bookingWorkspace.searchQuery)}"
+                          data-booking-search-query
+                        />
+                        <button type="button" data-action="searchAdminBookings" ${seatCountReady ? "" : "disabled"}>Search</button>
+                        <button type="button" class="ghost-button" data-action="clearAdminBookingSearch">Clear</button>
+                      </div>
+                      ${renderBookingSearchResults()}
+                    </div>
+                    <div class="booking-calendar-shell">
+                      ${renderAdminCalendarNavigator()}
+                      ${renderAdminCalendar()}
+                    </div>
+                    ${renderAdminCalendarModal()}
+                  </div>
+                `
+      }
+    </div>
+  `;
+}
+
+function renderBookingsReportPanel() {
+  const report = state.bookingWorkspace.report;
+  return `
+    <div class="stack">
+      <div class="inner-panel">
+        <div class="form-grid form-grid-three">
+          <div class="field">
+            <label for="booking-report-from-date">From date</label>
+            <input
+              id="booking-report-from-date"
+              type="date"
+              value="${escapeHtml(report.fromDate)}"
+              data-booking-report-from-date
+            />
+          </div>
+          <div class="field">
+            <label for="booking-report-to-date">To date</label>
+            <input
+              id="booking-report-to-date"
+              type="date"
+              value="${escapeHtml(report.toDate)}"
+              data-booking-report-to-date
+            />
+          </div>
+          <div class="field">
+            <label for="booking-report-from-time">From time</label>
+            <input
+              id="booking-report-from-time"
+              type="time"
+              value="${escapeHtml(report.fromTime)}"
+              data-booking-report-from-time
+            />
+          </div>
+          <div class="field">
+            <label for="booking-report-to-time">To time</label>
+            <input
+              id="booking-report-to-time"
+              type="time"
+              value="${escapeHtml(report.toTime)}"
+              data-booking-report-to-time
+            />
+          </div>
+        </div>
+        <div class="stack-inline">
+          <button type="button" data-action="runBookingReport">Run report</button>
+          <button
+            type="button"
+            class="ghost-button"
+            data-action="downloadBookingReportCsv"
+            ${report.results.length ? "" : "disabled"}
+          >
+            Download CSV
+          </button>
+        </div>
+      </div>
+      ${renderBookingReportResults()}
+    </div>
+  `;
+}
+
+function renderBookingSearchResults() {
+  if (!state.bookingWorkspace.searchHasRun) {
+    return '<p class="meta">Search this seat-count calendar and jump the booking calendar straight to the matching day.</p>';
+  }
+
+  if (!state.bookingWorkspace.searchResults.length) {
+    return '<div class="empty">No matching bookings were found.</div>';
+  }
+
+  return `
+    <div class="search-result-list">
+      ${state.bookingWorkspace.searchResults
+        .map(
+          (booking) => `
+            <button
+              type="button"
+              class="search-result-card"
+              data-action="focusAdminBookingSearchResult"
+              data-booking-id="${booking.id}"
+              data-date="${booking.bookingDate}"
+              data-time="${booking.bookingTime}"
+            >
+              <strong>${escapeHtml(booking.firstName)} ${escapeHtml(booking.lastName)}</strong>
+              <span>${escapeHtml(booking.bookingDate)} at ${escapeHtml(booking.bookingTime)}</span>
+              <span>${escapeHtml(booking.email)} | ${escapeHtml(booking.phone)}</span>
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderBookingReportResults() {
+  const report = state.bookingWorkspace.report;
+
+  if (!report.hasRun) {
+    return '<p class="meta">Run a report for the selected seat-count calendar and date/time range.</p>';
+  }
+
+  return `
+    <div class="inner-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Summary</p>
+          <h3>${escapeHtml(String(report.results.length))} booking${report.results.length === 1 ? "" : "s"}</h3>
+          <p class="meta">${escapeHtml(String(report.totalGuests))} total guests in the selected range.</p>
+        </div>
+      </div>
+      ${
+        report.results.length
+          ? `
+            <div class="report-table-wrap">
+              <table class="report-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Party</th>
+                    <th>First name</th>
+                    <th>Last name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${report.results
+                    .map(
+                      (booking) => `
+                        <tr>
+                          <td>${escapeHtml(booking.bookingDate)}</td>
+                          <td>${escapeHtml(booking.bookingTime)}</td>
+                          <td>${escapeHtml(String(booking.partySize))}</td>
+                          <td>${escapeHtml(booking.firstName)}</td>
+                          <td>${escapeHtml(booking.lastName)}</td>
+                          <td>${escapeHtml(booking.email)}</td>
+                          <td>${escapeHtml(booking.phone)}</td>
+                          <td>${escapeHtml(booking.notes || "")}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : '<div class="empty">No bookings were found for the selected range.</div>'
       }
     </div>
   `;
@@ -2199,6 +2410,47 @@ async function handleAction(action, dataset) {
     return;
   }
 
+  if (action === "showBookingCalendarTab") {
+    state.bookingWorkspace.activeTab = "calendar";
+    render();
+    return;
+  }
+
+  if (action === "showBookingReportsTab") {
+    state.bookingWorkspace.activeTab = "reports";
+    render();
+    return;
+  }
+
+  if (action === "searchAdminBookings") {
+    await searchAdminBookings();
+    return;
+  }
+
+  if (action === "clearAdminBookingSearch") {
+    state.bookingWorkspace.searchQuery = "";
+    state.bookingWorkspace.searchResults = [];
+    state.bookingWorkspace.searchHasRun = false;
+    clearStatus("bookings");
+    render();
+    return;
+  }
+
+  if (action === "focusAdminBookingSearchResult") {
+    await focusAdminBookingSearchResult(dataset.date);
+    return;
+  }
+
+  if (action === "runBookingReport") {
+    await runBookingReport();
+    return;
+  }
+
+  if (action === "downloadBookingReportCsv") {
+    downloadBookingReportCsv();
+    return;
+  }
+
   if (action === "copyWidgetUrl" || action === "copyWidgetEmbed") {
     await navigator.clipboard.writeText(dataset.url);
     setStatus("widgetSetup", "success", "Copied.");
@@ -2631,6 +2883,132 @@ async function handleOpenAiSettingsSubmit(form) {
   setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
 }
 
+async function searchAdminBookings() {
+  if (!state.adminCalendar.seatCountId) {
+    setStatus("bookings", "error", "Choose a seat-count calendar first.");
+    return;
+  }
+
+  const query = state.bookingWorkspace.searchQuery.trim();
+  if (!query) {
+    setStatus("bookings", "error", "Enter a first name, last name, email, or phone to search.");
+    return;
+  }
+
+  setStatus("bookings", "info", "Searching bookings...");
+  const response = await fetch(
+    `/api/bookings?action=search&seatCountId=${encodeURIComponent(state.adminCalendar.seatCountId)}&query=${encodeURIComponent(query)}&limit=25`,
+  );
+  const data = await readApiResponse(response);
+
+  if (!response.ok) {
+    setStatus("bookings", "error", data.error ?? "Booking search failed.");
+    return;
+  }
+
+  state.bookingWorkspace.searchResults = data.results ?? [];
+  state.bookingWorkspace.searchHasRun = true;
+  clearStatus("bookings");
+  render();
+}
+
+async function focusAdminBookingSearchResult(date) {
+  if (!date) {
+    return;
+  }
+
+  setStatus("bookings", "info", "Loading booking day...");
+  state.bookingWorkspace.activeTab = "calendar";
+  state.adminCalendar.currentMonth = monthKey(date);
+  state.adminCalendar.selectedDate = date;
+  state.adminCalendar.selectedTime = "";
+  state.adminCalendar.editingBookingId = "";
+  state.adminCalendar.modal = "day";
+  await refreshAdminAvailability();
+  clearStatus("bookings");
+  render();
+}
+
+async function runBookingReport() {
+  if (!state.adminCalendar.seatCountId) {
+    setStatus("bookings", "error", "Choose a seat-count calendar first.");
+    return;
+  }
+
+  const report = state.bookingWorkspace.report;
+  const params = new URLSearchParams({
+    action: "report",
+    seatCountId: state.adminCalendar.seatCountId,
+    fromDate: report.fromDate,
+    toDate: report.toDate,
+  });
+
+  if (report.fromTime) {
+    params.set("fromTime", report.fromTime);
+  }
+
+  if (report.toTime) {
+    params.set("toTime", report.toTime);
+  }
+
+  setStatus("bookings", "info", "Running booking report...");
+  const response = await fetch(`/api/bookings?${params.toString()}`);
+  const data = await readApiResponse(response);
+
+  if (!response.ok) {
+    setStatus("bookings", "error", data.error ?? "Booking report failed.");
+    return;
+  }
+
+  state.bookingWorkspace.report.results = data.bookings ?? [];
+  state.bookingWorkspace.report.totalGuests = Number(data.totalGuests ?? 0);
+  state.bookingWorkspace.report.hasRun = true;
+  clearStatus("bookings");
+  render();
+}
+
+function downloadBookingReportCsv() {
+  const report = state.bookingWorkspace.report;
+  if (!report.results.length) {
+    setStatus("bookings", "error", "Run a report first.");
+    return;
+  }
+
+  const header = [
+    "Booking Date",
+    "Booking Time",
+    "Party Size",
+    "First Name",
+    "Last Name",
+    "Email",
+    "Phone",
+    "Notes",
+  ];
+
+  const rows = report.results.map((booking) => [
+    booking.bookingDate,
+    booking.bookingTime,
+    booking.partySize,
+    booking.firstName,
+    booking.lastName,
+    booking.email,
+    booking.phone,
+    booking.notes ?? "",
+  ]);
+
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = buildBookingReportFileName();
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  setStatus("bookings", "success", "CSV downloaded.");
+}
+
 async function handleWidgetEditorGenerate(form) {
   const establishment = getSelectedWidgetEditorEstablishment();
   if (!establishment) {
@@ -2845,6 +3223,22 @@ function formatMegabytes(bytes) {
   return (Number(bytes ?? 0) / 1_000_000).toFixed(1).replace(/\.0$/, "");
 }
 
+function buildBookingReportFileName() {
+  const report = state.bookingWorkspace.report;
+  const start = report.fromDate || "report";
+  const end = report.toDate || start;
+  return `bookings-${start}-to-${end}.csv`;
+}
+
+function escapeCsvValue(value) {
+  const text = String(value ?? "");
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  return text;
+}
+
 async function logout() {
   await fetch("/api/logout", { method: "POST" });
   state.session = null;
@@ -2862,6 +3256,7 @@ async function logout() {
   state.selectedSeatCountIds.clear();
   state.userForm = createEmptyUserForm();
   state.companyForm = createEmptyCompanyForm();
+  state.bookingWorkspace = createBookingWorkspaceState();
   state.widgetEditor = createEmptyWidgetEditorState();
   state.adminCalendar.selectedDate = "";
   state.adminCalendar.selectedTime = "";
@@ -3232,6 +3627,32 @@ function createEmptyCompanyForm() {
   };
 }
 
+function createBookingWorkspaceState() {
+  return {
+    activeTab: "calendar",
+    searchQuery: "",
+    searchResults: [],
+    searchHasRun: false,
+    report: {
+      ...createBookingReportFilterState(),
+      results: [],
+      totalGuests: 0,
+      hasRun: false,
+    },
+  };
+}
+
+function createBookingReportFilterState() {
+  const today = todayString();
+  const currentMonth = monthKey(today);
+  return {
+    fromDate: monthStartDate(currentMonth),
+    toDate: monthEndDate(currentMonth),
+    fromTime: "",
+    toTime: "",
+  };
+}
+
 function createDefaultAppSettings() {
   return {
     openAiModel: "gpt-5.4-nano",
@@ -3463,6 +3884,7 @@ function syncAdminCalendarSelections() {
     state.adminCalendar.establishmentId = "";
     state.adminCalendar.seatCountId = "";
     state.adminAvailability = [];
+    clearBookingWorkspaceResults({ resetFilters: true });
     return;
   }
 
@@ -3478,6 +3900,25 @@ function syncAdminCalendarSelections() {
   const seatCounts = getAdminCalendarSeatCounts();
   if (!seatCounts.some((seatCount) => seatCount.id === state.adminCalendar.seatCountId)) {
     state.adminCalendar.seatCountId = seatCounts[0]?.id ?? "";
+    clearBookingWorkspaceResults();
+  }
+}
+
+function clearBookingWorkspaceResults(options = {}) {
+  state.bookingWorkspace.searchResults = [];
+  state.bookingWorkspace.searchHasRun = false;
+  state.bookingWorkspace.report.results = [];
+  state.bookingWorkspace.report.totalGuests = 0;
+  state.bookingWorkspace.report.hasRun = false;
+
+  if (options.resetFilters === true) {
+    state.bookingWorkspace.searchQuery = "";
+    state.bookingWorkspace.report = {
+      ...createBookingReportFilterState(),
+      results: [],
+      totalGuests: 0,
+      hasRun: false,
+    };
   }
 }
 
@@ -3781,6 +4222,11 @@ function parseMonthKey(key) {
 
 function monthStartDate(key) {
   return `${key}-01`;
+}
+
+function monthEndDate(key) {
+  const { year, monthIndex } = parseMonthKey(key);
+  return toDateString(year, monthIndex, daysInMonth(key));
 }
 
 function daysInMonth(key) {

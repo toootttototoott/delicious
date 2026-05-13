@@ -2,7 +2,9 @@ import {
   createBooking,
   deleteBooking,
   getBooking,
+  listBookingReport,
   listSeatCountAvailability,
+  searchBookingsForSeatCount,
   sanitizeBookingInput,
   updateBooking,
 } from "../lib/bookings.js";
@@ -49,6 +51,39 @@ export default async function handler(request, response) {
         }
 
         sendJson(response, 200, { booking });
+        return;
+      }
+
+      if (action === "search") {
+        const result = await searchBookingsForSeatCount(
+          url.searchParams.get("seatCountId"),
+          url.searchParams.get("query"),
+          { limit: Number(url.searchParams.get("limit") ?? 20) },
+        );
+
+        if (result.error) {
+          sendJson(response, 400, { error: result.error });
+          return;
+        }
+
+        sendJson(response, 200, result);
+        return;
+      }
+
+      if (action === "report") {
+        const result = await listBookingReport(url.searchParams.get("seatCountId"), {
+          fromDate: url.searchParams.get("fromDate"),
+          toDate: url.searchParams.get("toDate"),
+          fromTime: url.searchParams.get("fromTime"),
+          toTime: url.searchParams.get("toTime"),
+        });
+
+        if (result.error) {
+          sendJson(response, 400, { error: result.error });
+          return;
+        }
+
+        sendJson(response, 200, result);
         return;
       }
 

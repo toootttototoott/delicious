@@ -322,6 +322,7 @@ button[type="submit"],
 .inner-panel {
   display: grid;
   gap: 14px;
+  align-content: start;
   padding: 18px;
   border-radius: 18px;
   background: var(--panel-soft);
@@ -335,6 +336,7 @@ button[type="submit"],
 .stack {
   display: grid;
   gap: 14px;
+  align-content: start;
 }
 
 .stack-inline {
@@ -342,6 +344,26 @@ button[type="submit"],
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.tab-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tab-button {
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+}
+
+.tab-button.is-active {
+  background: rgba(200, 106, 60, 0.14);
+  border-color: rgba(142, 69, 37, 0.22);
+  color: var(--accent-dark);
 }
 
 .form-grid {
@@ -449,6 +471,32 @@ input[type="checkbox"] {
 
 .list-toolbar input {
   flex: 1 1 260px;
+}
+
+.booking-search-panel {
+  align-content: start;
+}
+
+.search-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.search-result-card {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  text-align: left;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(29, 42, 36, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.search-result-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .list-header {
@@ -881,6 +929,33 @@ body.widget-embed .widget-calendar-panel {
 .booking-row {
   padding-top: 10px;
   border-top: 1px solid rgba(29, 42, 36, 0.08);
+}
+
+.report-table-wrap {
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+}
+
+.report-table th,
+.report-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(29, 42, 36, 0.08);
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.94rem;
+}
+
+.report-table th {
+  color: var(--muted);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.55);
+  position: sticky;
+  top: 0;
 }
 
 .entity-select {
