@@ -13,11 +13,19 @@
       "destination": "/index.html"
     },
     {
+      "source": "/page-view",
+      "destination": "/index.html"
+    },
+    {
       "source": "/widget-setup",
       "destination": "/index.html"
     },
     {
       "source": "/widget-editor",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/page-view-editor",
       "destination": "/index.html"
     }
   ]
