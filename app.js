@@ -1,8 +1,11 @@
+const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
+
 const state = {
   session: null,
   users: [],
   companies: [],
   userCount: 0,
+  sectionPanels: loadSectionPanelState(),
   appSettings: createDefaultAppSettings(),
   openAiModelDraft: createDefaultAppSettings().openAiModel,
   openAiReasoningEffortDraft: createDefaultAppSettings().openAiReasoningEffort,
@@ -100,6 +103,8 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("popstate", () => {
+  redirectSignedInUserFromLogin();
+
   if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog().catch(() => {
       setStatus("widget", "error", "Widget data could not be loaded.");
@@ -198,6 +203,10 @@ document.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (syncAdminFormDraft(event.target)) {
+    return;
+  }
+
   if (event.target.matches("[data-user-search]")) {
     state.filters.users = event.target.value;
     render();
@@ -246,6 +255,10 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  if (syncAdminFormDraft(event.target)) {
+    return;
+  }
+
   if (event.target.matches("[data-user-select]")) {
     toggleSelection(state.selectedUserIds, event.target.value, event.target.checked);
     render();
@@ -358,6 +371,14 @@ document.addEventListener("paste", async (event) => {
   await handleWidgetEditorFiles(files, { append: true, sourceLabel: "pasted" });
 });
 
+document.addEventListener("toggle", (event) => {
+  if (!(event.target instanceof HTMLElement) || !event.target.matches("[data-section-panel-id]")) {
+    return;
+  }
+
+  setSectionPanelState(event.target.dataset.sectionPanelId, event.target.open);
+}, true);
+
 async function boot() {
   if (location.pathname === "/") {
     history.replaceState({}, "", "/login");
@@ -367,6 +388,8 @@ async function boot() {
   if (sessionResult[0]?.status === "rejected") {
     setStatus("auth", "error", "Session could not be loaded.");
   }
+
+  redirectSignedInUserFromLogin();
 
   if (location.pathname === "/widget") {
     const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
@@ -449,6 +472,7 @@ async function loadWidgetCatalog() {
 
 function navigate(target) {
   history.pushState({}, "", target);
+  redirectSignedInUserFromLogin();
   if (location.pathname === "/widget" && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog()
       .then(() => {
@@ -504,6 +528,7 @@ function render() {
 }
 
 function applyRouteChrome() {
+  const root = document.documentElement;
   const body = document.body;
   const shell = document.querySelector(".shell");
   const masthead = document.querySelector(".masthead");
@@ -511,6 +536,8 @@ function applyRouteChrome() {
   const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
   const hideChrome = isWidgetRoute || isLoginRoute;
 
+  root.classList.toggle("route-widget", isWidgetRoute);
+  root.classList.toggle("route-login", isLoginRoute);
   body.classList.toggle("widget-embed", isWidgetRoute);
   body.classList.toggle("login-standalone", isLoginRoute);
   shell?.classList.toggle("widget-embed-shell", isWidgetRoute);
@@ -587,9 +614,11 @@ function renderPageHeader({ eyebrow, title, meta, actions = "" }) {
   `;
 }
 
-function renderSectionPanel({ eyebrow, title, meta = "", badge = "", content, open = true }) {
+function renderSectionPanel({ id = "", eyebrow, title, meta = "", badge = "", content, open = true }) {
+  const rememberedOpen = id ? state.sectionPanels[id] : undefined;
+  const isOpen = typeof rememberedOpen === "boolean" ? rememberedOpen : open;
   return `
-    <details class="panel full-width section-panel" ${open ? "open" : ""}>
+    <details class="panel full-width section-panel" data-section-panel-id="${escapeHtml(id)}" ${isOpen ? "open" : ""}>
       <summary class="section-summary">
         <div>
           <p class="eyebrow">${escapeHtml(eyebrow)}</p>
@@ -701,6 +730,7 @@ function renderSettingsPage() {
         actions: renderSessionSummary(true),
       })}
       ${renderSectionPanel({
+        id: "settings-system",
         eyebrow: "System",
         title: "Widget editor OpenAI settings",
         meta: "Set the default model, upload limit, and reasoning effort used when generating establishment-specific CSS.",
@@ -715,6 +745,7 @@ function renderSettingsPage() {
         `,
       })}
       ${renderSectionPanel({
+        id: "settings-users",
         eyebrow: "Users",
         title: "Users and access",
         meta: "Create and manage user accounts, roles, and assignments.",
@@ -756,6 +787,7 @@ function renderSettingsPage() {
         `,
       })}
       ${renderSectionPanel({
+        id: "settings-locations",
         eyebrow: "Locations",
         title: "Companies, establishments, and seat counts",
         meta: "Keep the business structure and booking capacity organised in one place.",
@@ -803,6 +835,7 @@ function renderSettingsPage() {
         `,
       })}
       ${renderSectionPanel({
+        id: "settings-bookings",
         eyebrow: "Bookings",
         title: "Booking calendar",
         meta: "Set opening hours, inspect seat availability, and manage bookings by day.",
@@ -931,6 +964,7 @@ function renderWidgetSetupPage() {
         </div>
       </article>
       ${renderSectionPanel({
+        id: "widget-setup-share",
         eyebrow: "Share",
         title: "Widget URL and embed code",
         meta: "Copy the direct URL for testing or the iframe snippet for the external website.",
@@ -1340,7 +1374,7 @@ function renderUserForm(lockAdminLevel) {
         </div>
         <div class="field">
           <label for="password">${state.userForm.mode === "edit" ? "New password (optional)" : "Password"}</label>
-          <input id="password" name="password" type="password" autocomplete="new-password" ${state.userForm.mode === "create" ? 'minlength="8" required' : 'minlength="8"'} />
+          <input id="password" name="password" type="password" value="${escapeHtml(state.userForm.password)}" autocomplete="new-password" ${state.userForm.mode === "create" ? 'minlength="8" required' : 'minlength="8"'} />
         </div>
         <div class="field">
           <label for="authLevel">Auth level</label>
@@ -3080,6 +3114,71 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
     reader.readAsDataURL(file);
   });
+}
+
+function redirectSignedInUserFromLogin() {
+  if (!state.session || (location.pathname !== "/login" && location.pathname !== "/")) {
+    return false;
+  }
+
+  history.replaceState({}, "", getSignedInLandingPath());
+  return true;
+}
+
+function getSignedInLandingPath() {
+  return state.session?.authLevel === "admin" ? "/settings" : "/widget";
+}
+
+function syncAdminFormDraft(target) {
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+    return false;
+  }
+
+  const userForm = target.closest("[data-user-form]");
+  if (userForm) {
+    updateUserFormDraft(target.name, target.value);
+    return true;
+  }
+
+  const companyForm = target.closest("[data-company-form]");
+  if (companyForm) {
+    if (target.name === "name") {
+      state.companyForm.name = target.value;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function updateUserFormDraft(name, value) {
+  if (!name || !(name in state.userForm)) {
+    return;
+  }
+
+  state.userForm[name] = value;
+}
+
+function loadSectionPanelState() {
+  try {
+    const raw = localStorage.getItem(SECTION_PANEL_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setSectionPanelState(id, open) {
+  if (!id) {
+    return;
+  }
+
+  state.sectionPanels[id] = open;
+
+  try {
+    localStorage.setItem(SECTION_PANEL_STORAGE_KEY, JSON.stringify(state.sectionPanels));
+  } catch {}
 }
 
 function createEmptyUserForm() {
