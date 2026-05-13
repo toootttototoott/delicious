@@ -3075,15 +3075,20 @@ async function handleLogin(form) {
     state.userCount = Math.max(Number(state.userCount ?? 0), 1);
     clearStatus("auth");
 
+    history.replaceState({}, "", getSignedInLandingPath());
+
     if (hasSettingsAccess()) {
-      navigate("/settings");
+      try {
+        await loadAdminData();
+        await refreshAdminAvailability();
+      } catch {
+        setStatus("auth", "error", "Signed in, but account data could not be refreshed.");
+      }
     } else {
-      render();
+      syncWidgetFromLocation();
     }
 
-    refreshAdminState().catch(() => {
-      setStatus("auth", "error", "Signed in, but account data could not be refreshed.");
-    });
+    render();
   } catch (error) {
     setInlineFormStatus(form, "error", error.message ?? "Unable to sign in.");
     setSubmitPending(form, false, "Sign in");
