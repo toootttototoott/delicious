@@ -117,10 +117,20 @@ window.addEventListener("popstate", () => {
   }
 
   if (
-    (location.pathname === "/settings" ||
-      location.pathname === "/widget-setup" ||
-      location.pathname === "/widget-editor") &&
-    state.session?.authLevel === "admin" &&
+    location.pathname === "/settings" &&
+    hasSettingsAccess() &&
+    !state.companies.length
+  ) {
+    loadAdminData()
+      .then(() => refreshAdminAvailability())
+      .catch(() => {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      });
+  }
+
+  if (
+    (location.pathname === "/widget-setup" || location.pathname === "/widget-editor") &&
+    isAdminSession() &&
     !state.companies.length
   ) {
     loadAdminData()
@@ -151,7 +161,7 @@ document.addEventListener("visibilitychange", () => {
 
   if (
     location.pathname === "/settings" &&
-    state.session?.authLevel === "admin" &&
+    hasSettingsAccess() &&
     state.adminCalendar.seatCountId
   ) {
     refreshAdminAvailability({ silent: true }).then(render).catch(() => {});
@@ -440,10 +450,19 @@ async function boot() {
     }
 
     if (
-      (location.pathname === "/settings" ||
-        location.pathname === "/widget-setup" ||
+      location.pathname === "/settings" &&
+      hasSettingsAccess()
+    ) {
+      const adminResult = await Promise.allSettled([loadAdminData()]);
+      if (adminResult[0]?.status === "rejected") {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      }
+    }
+
+    if (
+      (location.pathname === "/widget-setup" ||
         location.pathname === "/widget-editor") &&
-      state.session?.authLevel === "admin"
+      isAdminSession()
     ) {
       const adminResult = await Promise.allSettled([loadAdminData()]);
       if (adminResult[0]?.status === "rejected") {
@@ -452,7 +471,7 @@ async function boot() {
     }
 
     syncWidgetFromLocation();
-    if (state.session?.authLevel === "admin") {
+    if (hasSettingsAccess()) {
       await refreshAdminAvailability();
     }
   } finally {
@@ -466,7 +485,7 @@ async function loadSession() {
   const payload = await readApiResponse(response);
   state.session = payload.session;
   state.userCount = Number(payload.userCount ?? 0);
-  if (state.session?.authLevel !== "admin") {
+  if (!hasSettingsAccess()) {
     state.users = [];
     state.companies = [];
     state.appSettings = createDefaultAppSettings();
@@ -530,10 +549,23 @@ function navigate(target) {
   }
 
   if (
-    (location.pathname === "/settings" ||
-      location.pathname === "/widget-setup" ||
-      location.pathname === "/widget-editor") &&
-    state.session?.authLevel === "admin" &&
+    location.pathname === "/settings" &&
+    hasSettingsAccess() &&
+    !state.companies.length
+  ) {
+    loadAdminData()
+      .then(async () => {
+        await refreshAdminAvailability();
+        render();
+      })
+      .catch(() => {
+        setStatus("auth", "error", "Admin data could not be loaded.");
+      });
+  }
+
+  if (
+    (location.pathname === "/widget-setup" || location.pathname === "/widget-editor") &&
+    isAdminSession() &&
     !state.companies.length
   ) {
     loadAdminData()
@@ -564,12 +596,15 @@ function render() {
     return;
   }
 
-  if (
-    needsAdminRedirect("/settings") ||
-    needsAdminRedirect("/widget-setup") ||
-    needsAdminRedirect("/widget-editor")
-  ) {
+  if (needsSettingsRedirect()) {
     history.replaceState({}, "", "/login");
+    if (!state.statuses.auth) {
+      state.statuses.auth = { kind: "error", message: "Settings access required." };
+    }
+  }
+
+  if (needsAdminOnlyRedirect()) {
+    history.replaceState({}, "", getSignedInLandingPath());
     if (!state.statuses.auth) {
       state.statuses.auth = { kind: "error", message: "Admin access required." };
     }
@@ -587,7 +622,7 @@ function applyRouteChrome() {
   const masthead = document.querySelector(".masthead");
   const isWidgetRoute = location.pathname === "/widget";
   const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
-  const hideChrome = state.booting || isWidgetRoute || isLoginRoute;
+  const hideChrome = state.booting || isWidgetRoute || isLoginRoute || isManagerSession() || isStaffSession();
 
   root.classList.toggle("route-widget", isWidgetRoute);
   root.classList.toggle("route-login", isLoginRoute);
@@ -598,30 +633,32 @@ function applyRouteChrome() {
   masthead?.classList.toggle("is-hidden", hideChrome);
 }
 
-function needsAdminRedirect(pathname) {
-  return (
-    location.pathname === pathname &&
-    state.userCount > 0 &&
-    state.session?.authLevel !== "admin"
-  );
-}
-
 function renderTopnav() {
-  if (location.pathname === "/widget" || location.pathname === "/login" || location.pathname === "/") {
+  if (
+    location.pathname === "/widget" ||
+    location.pathname === "/login" ||
+    location.pathname === "/" ||
+    isManagerSession() ||
+    isStaffSession()
+  ) {
     return "";
   }
 
-  const canViewSettings = state.userCount === 0 || state.session?.authLevel === "admin";
+  const canViewSettings = state.userCount === 0 || hasSettingsAccess();
   const widgetHref =
     (canViewSettings ? getWidgetUrl() : "") ||
     `/widget${state.widget.seatCountId ? `?seatCountId=${encodeURIComponent(state.widget.seatCountId)}` : ""}`;
   const links = [
     renderTopnavLink(widgetHref, "Widget", location.pathname === "/widget"),
     canViewSettings
-      ? renderTopnavLink("/widget-setup", "Embed Setup", location.pathname === "/widget-setup")
+      ? isAdminSession()
+        ? renderTopnavLink("/widget-setup", "Embed Setup", location.pathname === "/widget-setup")
+        : ""
       : "",
     canViewSettings
-      ? renderTopnavLink("/widget-editor", "Theme Editor", location.pathname === "/widget-editor")
+      ? isAdminSession()
+        ? renderTopnavLink("/widget-editor", "Theme Editor", location.pathname === "/widget-editor")
+        : ""
       : "",
     canViewSettings
       ? renderTopnavLink("/settings", "Admin", location.pathname === "/settings")
@@ -756,7 +793,7 @@ function renderLoginPage() {
 
 function renderSettingsPage() {
   const hasUsers = state.userCount > 0;
-  const isAdmin = state.session?.authLevel === "admin";
+  const isAdmin = isAdminSession();
 
   if (!hasUsers) {
     return `
@@ -781,7 +818,7 @@ function renderSettingsPage() {
     `;
   }
 
-  if (!isAdmin) {
+  if (!hasSettingsAccess()) {
     return `
       <section class="layout">
         ${renderPageHeader({
@@ -796,6 +833,10 @@ function renderSettingsPage() {
         </article>
       </section>
     `;
+  }
+
+  if (!isAdmin) {
+    return renderScopedSettingsPage();
   }
 
   return `
@@ -913,6 +954,73 @@ function renderSettingsPage() {
         open: true,
         content: `<div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>`,
       })}
+    </section>
+  `;
+}
+
+function renderScopedSettingsPage() {
+  if (isManagerSession()) {
+    state.userForm.authLevel = "staff";
+    state.userForm.companyId = state.session?.companyId ?? "";
+    state.userForm.establishmentId = state.session?.establishmentId ?? "";
+  }
+
+  return `
+    <section class="layout">
+      <article class="panel full-width">
+        <div class="two-column-layout">
+          <div class="inner-panel">
+            <p class="eyebrow">Access</p>
+            <h2>${isManagerSession() ? "Manager booking workspace" : "Staff booking workspace"}</h2>
+            <p class="meta">This view is limited to your assigned establishment.</p>
+            ${renderSessionSummary(true)}
+          </div>
+          <div class="inner-panel">
+            <p class="eyebrow">Scope</p>
+            <h3>${escapeHtml(getEstablishmentLabel(state.session?.establishmentId) || "No establishment assigned")}</h3>
+            <p class="meta">${
+              isManagerSession()
+                ? "Managers can run reports for this establishment and add staff accounts assigned here."
+                : "Staff can manage bookings for this establishment."
+            }</p>
+          </div>
+        </div>
+      </article>
+      ${
+        isManagerSession()
+          ? `
+            <article class="panel full-width">
+              <div class="two-column-layout">
+                <div class="inner-panel">
+                  <p class="eyebrow">Staff access</p>
+                  <h3>Create staff member</h3>
+                  <p class="meta">New accounts created here are always assigned to this establishment.</p>
+                  ${renderUserForm(false, {
+                    restrictToStaff: true,
+                    hideAssignmentFields: true,
+                    hideRoleField: true,
+                  })}
+                  ${renderStatus("users")}
+                </div>
+                <div class="inner-panel">
+                  <p class="eyebrow">Current staff</p>
+                  <h3>Assigned to this establishment</h3>
+                  <p class="meta">Managers can view the staff accounts linked to this location.</p>
+                  <div class="users">${renderUsers()}</div>
+                </div>
+              </div>
+            </article>
+          `
+          : ""
+      }
+      <article class="panel full-width">
+        <p class="eyebrow">Bookings</p>
+        <h3>Booking calendar</h3>
+        <p class="meta">Inspect seat availability, manage bookings by day, and ${
+          canAccessBookingReports() ? "run reports for this establishment." : "search customer bookings."
+        }</p>
+        <div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>
+      </article>
     </section>
   `;
 }
@@ -1419,7 +1527,12 @@ function renderOpenAiReasoningEffortOptions(selectedValue) {
     .join("");
 }
 
-function renderUserForm(lockAdminLevel) {
+function renderUserForm(lockAdminLevel, options = {}) {
+  const restrictToStaff = options.restrictToStaff === true;
+  const hideAssignmentFields = options.hideAssignmentFields === true;
+  const hideRoleField = options.hideRoleField === true;
+  const fixedCompanyId = restrictToStaff ? state.session?.companyId ?? "" : "";
+  const fixedEstablishmentId = restrictToStaff ? state.session?.establishmentId ?? "" : "";
   const companyOptions = [
     '<option value="">No company</option>',
     ...state.companies.map(
@@ -1462,26 +1575,76 @@ function renderUserForm(lockAdminLevel) {
           <input id="password" name="password" type="password" value="${escapeHtml(state.userForm.password)}" autocomplete="new-password" ${state.userForm.mode === "create" ? 'minlength="8" required' : 'minlength="8"'} />
         </div>
         <div class="field">
-          <label for="authLevel">Auth level</label>
-          <select id="authLevel" name="authLevel" ${lockAdminLevel ? "disabled" : ""}>
-            <option value="admin" ${state.userForm.authLevel === "admin" ? "selected" : ""}>Admin</option>
-            <option value="user" ${state.userForm.authLevel === "user" ? "selected" : ""}>User</option>
-            <option value="manager" ${state.userForm.authLevel === "manager" ? "selected" : ""}>Manager</option>
-            <option value="staff" ${state.userForm.authLevel === "staff" ? "selected" : ""}>Staff</option>
-          </select>
-          ${lockAdminLevel ? '<input type="hidden" name="authLevel" value="admin" />' : ""}
+          <label for="confirmPassword">${state.userForm.mode === "edit" ? "Confirm new password" : "Confirm password"}</label>
+          <input
+            id="confirmPassword"
+            name="confirmPassword"
+            type="password"
+            value="${escapeHtml(state.userForm.confirmPassword)}"
+            autocomplete="new-password"
+            ${state.userForm.mode === "create" ? 'minlength="8" required' : ""}
+          />
         </div>
-        <div class="field">
-          <label for="companyId">Company</label>
-          <select id="companyId" name="companyId">${companyOptions}</select>
-        </div>
-        <div class="field">
-          <label for="establishmentId">Establishment</label>
-          <select id="establishmentId" name="establishmentId">${establishmentOptions}</select>
-        </div>
+        ${
+          hideRoleField
+            ? `
+              <div class="field">
+                <label>Auth level</label>
+                <input value="Staff" readonly />
+                <input type="hidden" name="authLevel" value="staff" />
+              </div>
+            `
+            : `
+              <div class="field">
+                <label for="authLevel">Auth level</label>
+                <select id="authLevel" name="authLevel" ${lockAdminLevel ? "disabled" : ""}>
+                  <option value="admin" ${state.userForm.authLevel === "admin" ? "selected" : ""}>Admin</option>
+                  <option value="user" ${state.userForm.authLevel === "user" ? "selected" : ""}>User</option>
+                  <option value="manager" ${state.userForm.authLevel === "manager" ? "selected" : ""}>Manager</option>
+                  <option value="staff" ${state.userForm.authLevel === "staff" ? "selected" : ""}>Staff</option>
+                </select>
+                ${lockAdminLevel ? '<input type="hidden" name="authLevel" value="admin" />' : ""}
+              </div>
+            `
+        }
+        ${
+          hideAssignmentFields
+            ? `
+              <div class="field">
+                <label>Company</label>
+                <input value="${escapeHtml(getCompanyNameById(fixedCompanyId) || "No company")}" readonly />
+                <input type="hidden" name="companyId" value="${escapeHtml(fixedCompanyId)}" />
+              </div>
+              <div class="field">
+                <label>Establishment</label>
+                <input value="${escapeHtml(getEstablishmentLabel(fixedEstablishmentId) || "No establishment assigned")}" readonly />
+                <input type="hidden" name="establishmentId" value="${escapeHtml(fixedEstablishmentId)}" />
+              </div>
+            `
+            : `
+              <div class="field">
+                <label for="companyId">Company</label>
+                <select id="companyId" name="companyId">${companyOptions}</select>
+              </div>
+              <div class="field">
+                <label for="establishmentId">Establishment</label>
+                <select id="establishmentId" name="establishmentId">${establishmentOptions}</select>
+              </div>
+            `
+        }
       </div>
       <div class="stack-inline">
-        <button type="submit">${state.userForm.mode === "edit" ? "Save user" : lockAdminLevel ? "Create admin" : "Create user"}</button>
+        <button type="submit">${
+          state.userForm.mode === "edit"
+            ? restrictToStaff
+              ? "Save staff member"
+              : "Save user"
+            : lockAdminLevel
+              ? "Create admin"
+              : restrictToStaff
+                ? "Create staff member"
+                : "Create user"
+        }</button>
         ${
           state.userForm.mode === "edit"
             ? '<button type="button" class="ghost-button" data-action="cancelUserEdit">Cancel</button>'
@@ -1515,9 +1678,12 @@ function renderUsers() {
   const companiesById = new Map(state.companies.map((company) => [company.id, company.name]));
   const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment]));
   const users = getFilteredUsers();
+  const canManageUsers = isAdminSession();
 
   if (!users.length) {
-    return '<div class="empty">No users match the current search.</div>';
+    return `<div class="empty">${
+      isManagerSession() ? "No staff accounts are assigned to this establishment yet." : "No users match the current search."
+    }</div>`;
   }
 
   return users
@@ -1528,15 +1694,21 @@ function renderUsers() {
         : "No establishment";
       return `
         <article class="entity-card">
-          <label class="checkbox entity-select">
-            <input
-              type="checkbox"
-              value="${user.id}"
-              data-user-select
-              ${state.selectedUserIds.has(user.id) ? "checked" : ""}
-            />
-            <span></span>
-          </label>
+          ${
+            canManageUsers
+              ? `
+                <label class="checkbox entity-select">
+                  <input
+                    type="checkbox"
+                    value="${user.id}"
+                    data-user-select
+                    ${state.selectedUserIds.has(user.id) ? "checked" : ""}
+                  />
+                  <span></span>
+                </label>
+              `
+              : ""
+          }
           <div class="entity-body">
             <div class="entity-row">
               <div>
@@ -1545,10 +1717,16 @@ function renderUsers() {
                 <p class="meta">${escapeHtml(user.authLevel)} | ${escapeHtml(companyName)}</p>
                 <p class="meta">${escapeHtml(establishment)}</p>
               </div>
-              <div class="stack-inline">
-                <button type="button" class="ghost-button" data-action="editUser" data-user-id="${user.id}">Edit</button>
-                <button type="button" class="ghost-button" data-action="deleteUser" data-user-id="${user.id}">Delete</button>
-              </div>
+              ${
+                canManageUsers
+                  ? `
+                    <div class="stack-inline">
+                      <button type="button" class="ghost-button" data-action="editUser" data-user-id="${user.id}">Edit</button>
+                      <button type="button" class="ghost-button" data-action="deleteUser" data-user-id="${user.id}">Delete</button>
+                    </div>
+                  `
+                  : ""
+              }
             </div>
           </div>
         </article>
@@ -1724,60 +1902,107 @@ function renderOpeningHoursEditor(establishment) {
 }
 
 function renderBookingsPanel() {
+  if (!canAccessBookingReports() && state.bookingWorkspace.activeTab !== "calendar") {
+    state.bookingWorkspace.activeTab = "calendar";
+  }
+
   const companies = getAdminCalendarCompanies();
   const establishments = getAdminCalendarEstablishments();
   const seatCounts = getAdminCalendarSeatCounts();
-  const activeTab = state.bookingWorkspace.activeTab;
+  const activeTab = canAccessBookingReports() ? state.bookingWorkspace.activeTab : "calendar";
   const seatCountReady = Boolean(companies.length && establishments.length && seatCounts.length);
+  const restrictedScope = isManagerSession() || isStaffSession();
+  const selectedCompany = companies.find((company) => company.id === state.adminCalendar.companyId) ?? null;
+  const selectedEstablishment =
+    establishments.find((establishment) => establishment.id === state.adminCalendar.establishmentId) ?? null;
+  const selectedSeatCount =
+    seatCounts.find((seatCount) => seatCount.id === state.adminCalendar.seatCountId) ?? null;
 
   return `
     <div class="stack">
-      <div class="form-grid">
-        <div class="field">
-          <label for="booking-company">Company</label>
-          <select id="booking-company" data-booking-company>
-            ${companies
-              .map(
-                (company) => `
-                  <option value="${company.id}" ${state.adminCalendar.companyId === company.id ? "selected" : ""}>
-                    ${escapeHtml(company.name)}
-                  </option>
-                `,
-              )
-              .join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label for="booking-establishment">Establishment</label>
-          <select id="booking-establishment" data-booking-establishment>
-            ${establishments.length ? "" : '<option value="">No establishments</option>'}
-            ${establishments
-              .map(
-                (establishment) => `
-                  <option value="${establishment.id}" ${state.adminCalendar.establishmentId === establishment.id ? "selected" : ""}>
-                    ${escapeHtml(establishment.name)}
-                  </option>
-                `,
-              )
-              .join("")}
-          </select>
-        </div>
-        <div class="field full">
-          <label for="booking-seat-count">Seat-count calendar</label>
-          <select id="booking-seat-count" data-booking-seat-count>
-            ${seatCounts.length ? "" : '<option value="">No seat counts</option>'}
-            ${seatCounts
-              .map(
-                (seatCount) => `
-                  <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
-                    ${escapeHtml(seatCount.seatCount)} seats
-                  </option>
-                `,
-              )
-              .join("")}
-          </select>
-        </div>
-      </div>
+      ${
+        restrictedScope
+          ? `
+            <div class="form-grid">
+              <div class="field">
+                <label>Company</label>
+                <input value="${escapeHtml(selectedCompany?.name ?? "No company assigned")}" readonly />
+              </div>
+              <div class="field">
+                <label>Establishment</label>
+                <input value="${escapeHtml(selectedEstablishment?.name ?? "No establishment assigned")}" readonly />
+              </div>
+              <div class="field full">
+                <label for="booking-seat-count">Seat-count calendar</label>
+                <select id="booking-seat-count" data-booking-seat-count>
+                  ${seatCounts.length ? "" : '<option value="">No seat counts</option>'}
+                  ${seatCounts
+                    .map(
+                      (seatCount) => `
+                        <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
+                          ${escapeHtml(seatCount.seatCount)} seats
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+                ${
+                  selectedSeatCount
+                    ? `<p class="meta">Viewing the ${escapeHtml(String(selectedSeatCount.seatCount))}-seat calendar for your establishment.</p>`
+                    : ""
+                }
+              </div>
+            </div>
+          `
+          : `
+            <div class="form-grid">
+              <div class="field">
+                <label for="booking-company">Company</label>
+                <select id="booking-company" data-booking-company>
+                  ${companies
+                    .map(
+                      (company) => `
+                        <option value="${company.id}" ${state.adminCalendar.companyId === company.id ? "selected" : ""}>
+                          ${escapeHtml(company.name)}
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+              <div class="field">
+                <label for="booking-establishment">Establishment</label>
+                <select id="booking-establishment" data-booking-establishment>
+                  ${establishments.length ? "" : '<option value="">No establishments</option>'}
+                  ${establishments
+                    .map(
+                      (establishment) => `
+                        <option value="${establishment.id}" ${state.adminCalendar.establishmentId === establishment.id ? "selected" : ""}>
+                          ${escapeHtml(establishment.name)}
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+              <div class="field full">
+                <label for="booking-seat-count">Seat-count calendar</label>
+                <select id="booking-seat-count" data-booking-seat-count>
+                  ${seatCounts.length ? "" : '<option value="">No seat counts</option>'}
+                  ${seatCounts
+                    .map(
+                      (seatCount) => `
+                        <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
+                          ${escapeHtml(seatCount.seatCount)} seats
+                        </option>
+                      `,
+                    )
+                    .join("")}
+                </select>
+              </div>
+            </div>
+          `
+      }
       <div class="tab-row">
         <button
           type="button"
@@ -1786,13 +2011,19 @@ function renderBookingsPanel() {
         >
           Booking calendar
         </button>
-        <button
-          type="button"
-          class="${activeTab === "reports" ? "tab-button is-active" : "tab-button"}"
-          data-action="showBookingReportsTab"
-        >
-          Reports
-        </button>
+        ${
+          canAccessBookingReports()
+            ? `
+              <button
+                type="button"
+                class="${activeTab === "reports" ? "tab-button is-active" : "tab-button"}"
+                data-action="showBookingReportsTab"
+              >
+                Reports
+              </button>
+            `
+            : ""
+        }
       </div>
       ${renderStatus("bookings")}
       ${
@@ -2487,6 +2718,12 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "showBookingReportsTab") {
+    if (!canAccessBookingReports()) {
+      state.bookingWorkspace.activeTab = "calendar";
+      render();
+      return;
+    }
+
     state.bookingWorkspace.activeTab = "reports";
     render();
     return;
@@ -2609,6 +2846,7 @@ async function handleAction(action, dataset) {
       lastName: user.lastName,
       email: user.email,
       password: "",
+      confirmPassword: "",
       authLevel: user.authLevel,
       companyId: user.companyId ?? "",
       establishmentId: user.establishmentId ?? "",
@@ -2837,7 +3075,7 @@ async function handleLogin(form) {
     state.userCount = Math.max(Number(state.userCount ?? 0), 1);
     clearStatus("auth");
 
-    if (state.session?.authLevel === "admin") {
+    if (hasSettingsAccess()) {
       navigate("/settings");
     } else {
       render();
@@ -2855,6 +3093,20 @@ async function handleLogin(form) {
 
 async function handleUserSubmit(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
+  const password = String(payload.password ?? "");
+  const confirmPassword = String(payload.confirmPassword ?? "");
+
+  if (state.userForm.mode === "create" && password !== confirmPassword) {
+    setStatus("users", "error", "Password and confirm password must match.");
+    return;
+  }
+
+  if (state.userForm.mode === "edit" && (password || confirmPassword) && password !== confirmPassword) {
+    setStatus("users", "error", "New password and confirm new password must match.");
+    return;
+  }
+
+  delete payload.confirmPassword;
   payload.action = state.userForm.mode === "edit" ? "update" : "create";
 
   if (state.userForm.mode === "edit") {
@@ -3006,6 +3258,11 @@ async function focusAdminBookingSearchResult(date) {
 }
 
 async function runBookingReport() {
+  if (!canAccessBookingReports()) {
+    setStatus("bookings", "error", "Your account cannot run booking reports.");
+    return;
+  }
+
   if (!state.adminCalendar.seatCountId) {
     setStatus("bookings", "error", "Choose a seat-count calendar first.");
     return;
@@ -3067,6 +3324,11 @@ function applyBookingReportPreset(preset) {
 }
 
 function downloadBookingReportCsv() {
+  if (!canAccessBookingReports()) {
+    setStatus("bookings", "error", "Your account cannot download booking reports.");
+    return;
+  }
+
   const report = state.bookingWorkspace.report;
   if (!report.results.length) {
     setStatus("bookings", "error", "Run a report first.");
@@ -3399,7 +3661,7 @@ async function logout() {
 
 async function refreshAdminState() {
   await loadSession();
-  if (state.session?.authLevel === "admin") {
+  if (hasSettingsAccess()) {
     await loadAdminData();
     await refreshAdminAvailability();
   } else {
@@ -3464,7 +3726,7 @@ async function refreshWidgetAvailabilityImpl(options = {}) {
 
 async function refreshAdminAvailability(options = {}) {
   const silent = options.silent === true;
-  if (!state.adminCalendar.seatCountId || state.session?.authLevel !== "admin") {
+  if (!state.adminCalendar.seatCountId || !hasSettingsAccess()) {
     state.adminAvailability = [];
     state.adminCalendar.selectedDate = "";
     state.adminCalendar.selectedTime = "";
@@ -3512,7 +3774,7 @@ function syncLiveRefresh() {
   const adminShouldPoll =
     document.visibilityState === "visible" &&
     location.pathname === "/settings" &&
-    state.session?.authLevel === "admin" &&
+    hasSettingsAccess() &&
     Boolean(state.adminCalendar.seatCountId) &&
     !settingsInputActive;
 
@@ -3680,7 +3942,43 @@ function redirectSignedInUserFromLogin() {
 }
 
 function getSignedInLandingPath() {
-  return state.session?.authLevel === "admin" ? "/settings" : "/widget";
+  return hasSettingsAccess() ? "/settings" : "/widget";
+}
+
+function isAdminSession() {
+  return state.session?.authLevel === "admin";
+}
+
+function isManagerSession() {
+  return state.session?.authLevel === "manager";
+}
+
+function isStaffSession() {
+  return state.session?.authLevel === "staff";
+}
+
+function hasSettingsAccess() {
+  return isAdminSession() || isManagerSession() || isStaffSession();
+}
+
+function canAccessBookingReports() {
+  return isAdminSession() || isManagerSession();
+}
+
+function isScopedSettingsSession() {
+  return location.pathname === "/settings" && (isManagerSession() || isStaffSession());
+}
+
+function needsSettingsRedirect() {
+  return location.pathname === "/settings" && state.userCount > 0 && !hasSettingsAccess();
+}
+
+function needsAdminOnlyRedirect() {
+  return (
+    (location.pathname === "/widget-setup" || location.pathname === "/widget-editor") &&
+    state.userCount > 0 &&
+    !isAdminSession()
+  );
 }
 
 function syncAdminFormDraft(target) {
@@ -3743,6 +4041,7 @@ function createEmptyUserForm() {
     lastName: "",
     email: "",
     password: "",
+    confirmPassword: "",
     authLevel: "user",
     companyId: "",
     establishmentId: "",
@@ -3937,6 +4236,10 @@ function getAllEstablishments() {
       companyName: company.name,
     })),
   );
+}
+
+function getCompanyNameById(companyId) {
+  return state.companies.find((company) => company.id === companyId)?.name ?? "";
 }
 
 function getEstablishmentLabel(establishmentId) {

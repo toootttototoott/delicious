@@ -2,6 +2,7 @@ import {
   createBooking,
   deleteBooking,
   getBooking,
+  getSeatCountContext,
   listBookingReport,
   listSeatCountAvailability,
   searchBookingsForSeatCount,
@@ -16,18 +17,30 @@ export default async function handler(request, response) {
   try {
     await ensureSchema();
     const session = await getSessionUserFromCookieHeader(request.headers.cookie);
+    const canAccessBookings = ["admin", "manager", "staff"].includes(session?.authLevel);
 
-    if (session?.authLevel !== "admin") {
-      sendJson(response, 403, { error: "Admin access required." });
+    if (!canAccessBookings) {
+      sendJson(response, 403, { error: "Booking access required." });
       return;
     }
 
     if (request.method === "GET") {
       const url = new URL(request.url, "https://bookings.local");
       const action = url.searchParams.get("action") ?? "calendar";
+      const seatCountId = url.searchParams.get("seatCountId");
 
       if (action === "calendar") {
-        const seatCountId = url.searchParams.get("seatCountId");
+        const seatCount = await getSeatCountContext(seatCountId);
+        if (!seatCount) {
+          sendJson(response, 400, { error: "Selected seat count does not exist." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
         const fromDate = url.searchParams.get("fromDate");
         const days = Number(url.searchParams.get("days") ?? 31);
         const availability = await listSeatCountAvailability(seatCountId, fromDate, days, {
@@ -50,13 +63,29 @@ export default async function handler(request, response) {
           return;
         }
 
+        if (!canAccessEstablishment(session, booking.establishmentId)) {
+          sendJson(response, 403, { error: "That booking is outside your establishment access." });
+          return;
+        }
+
         sendJson(response, 200, { booking });
         return;
       }
 
       if (action === "search") {
+        const seatCount = await getSeatCountContext(seatCountId);
+        if (!seatCount) {
+          sendJson(response, 400, { error: "Selected seat count does not exist." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
         const result = await searchBookingsForSeatCount(
-          url.searchParams.get("seatCountId"),
+          seatCountId,
           url.searchParams.get("query"),
           { limit: Number(url.searchParams.get("limit") ?? 20) },
         );
@@ -71,6 +100,22 @@ export default async function handler(request, response) {
       }
 
       if (action === "report") {
+        if (session.authLevel === "staff") {
+          sendJson(response, 403, { error: "Staff cannot run booking reports." });
+          return;
+        }
+
+        const seatCount = await getSeatCountContext(seatCountId);
+        if (!seatCount) {
+          sendJson(response, 400, { error: "Selected seat count does not exist." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
         const result = await listBookingReport(url.searchParams.get("seatCountId"), {
           fromDate: url.searchParams.get("fromDate"),
           toDate: url.searchParams.get("toDate"),
@@ -102,6 +147,17 @@ export default async function handler(request, response) {
           return;
         }
 
+        const seatCount = await getSeatCountContext(input.seatCountId);
+        if (!seatCount) {
+          sendJson(response, 400, { error: "Selected seat count does not exist." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
         const result = await createBooking(input);
         if (result.error) {
           sendJson(response, 409, { error: result.error });
@@ -119,6 +175,28 @@ export default async function handler(request, response) {
           return;
         }
 
+        const seatCount = await getSeatCountContext(input.seatCountId);
+        if (!seatCount) {
+          sendJson(response, 400, { error: "Selected seat count does not exist." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
+        const booking = await getBooking(input.bookingId);
+        if (!booking) {
+          sendJson(response, 404, { error: "Booking not found." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, booking.establishmentId)) {
+          sendJson(response, 403, { error: "That booking is outside your establishment access." });
+          return;
+        }
+
         const result = await updateBooking(input);
         if (result.error) {
           sendJson(response, 409, { error: result.error });
@@ -130,6 +208,17 @@ export default async function handler(request, response) {
       }
 
       if (action === "delete") {
+        const booking = await getBooking(body.bookingId);
+        if (!booking) {
+          sendJson(response, 404, { error: "Booking not found." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, booking.establishmentId)) {
+          sendJson(response, 403, { error: "That booking is outside your establishment access." });
+          return;
+        }
+
         const result = await deleteBooking(body.bookingId);
         if (result.error) {
           sendJson(response, 400, { error: result.error });
@@ -151,4 +240,12 @@ export default async function handler(request, response) {
       error: `Bookings API failed: ${error.message ?? "Unknown error."}`,
     });
   }
+}
+
+function canAccessEstablishment(session, establishmentId) {
+  if (session?.authLevel === "admin") {
+    return true;
+  }
+
+  return Boolean(session?.establishmentId && establishmentId && session.establishmentId === establishmentId);
 }

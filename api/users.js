@@ -23,32 +23,51 @@ export default async function handler(request, response) {
   const existingUsersCount = await countUsers();
   const session = await getSessionUserFromCookieHeader(request.headers.cookie);
   const bootstrapMode = existingUsersCount === 0;
+  const isAdmin = session?.authLevel === "admin";
+  const isManager = session?.authLevel === "manager";
 
-  if (!bootstrapMode && session?.authLevel !== "admin") {
-    sendJson(response, 403, { error: "Admin access required." });
+  if (!bootstrapMode && !isAdmin && !isManager) {
+    sendJson(response, 403, { error: "Admin or manager access required." });
     return;
   }
 
   if (action === "create") {
-    const input = await sanitizeUserInput(body, { passwordRequired: true });
-    if (input.error) {
-      sendJson(response, 400, { error: input.error });
+    const managerBody = isManager
+      ? {
+          ...body,
+          authLevel: "staff",
+          companyId: session?.companyId ?? "",
+          establishmentId: session?.establishmentId ?? "",
+        }
+      : body;
+    if (isManager && !session?.establishmentId) {
+      sendJson(response, 403, { error: "Manager account must be assigned to an establishment first." });
       return;
     }
 
-    if (bootstrapMode && input.authLevel !== "admin") {
+    const normalizedInput = await sanitizeUserInput(managerBody, { passwordRequired: true });
+    if (normalizedInput.error) {
+      sendJson(response, 400, { error: normalizedInput.error });
+      return;
+    }
+
+    if (bootstrapMode && normalizedInput.authLevel !== "admin") {
       sendJson(response, 400, { error: "The first account must be an admin." });
       return;
     }
 
     try {
-      const user = await createUser(input);
+      const user = await createUser(normalizedInput);
       const headers = bootstrapMode ? { "Set-Cookie": buildBootstrapCookie(user) } : {};
       sendJson(
         response,
         201,
         {
-          message: bootstrapMode ? "Admin created and signed in." : "User created.",
+          message: bootstrapMode
+            ? "Admin created and signed in."
+            : isManager
+              ? "Staff member created."
+              : "User created.",
           user,
         },
         headers,
@@ -66,6 +85,11 @@ export default async function handler(request, response) {
   }
 
   if (action === "update") {
+    if (isManager) {
+      sendJson(response, 403, { error: "Managers can only create staff accounts." });
+      return;
+    }
+
     const input = await sanitizeUserInput(body, { passwordRequired: false });
     if (input.error) {
       sendJson(response, 400, { error: input.error });
@@ -88,6 +112,11 @@ export default async function handler(request, response) {
   }
 
   if (action === "delete") {
+    if (isManager) {
+      sendJson(response, 403, { error: "Managers can only create staff accounts." });
+      return;
+    }
+
     const result = await deleteUser(body.userId, session?.id);
     if (result.error) {
       sendJson(response, 400, { error: result.error });
@@ -99,6 +128,11 @@ export default async function handler(request, response) {
   }
 
   if (action === "bulkDelete") {
+    if (isManager) {
+      sendJson(response, 403, { error: "Managers can only create staff accounts." });
+      return;
+    }
+
     const result = await bulkDeleteUsers(body.userIds ?? [], session?.id);
     if (result.error) {
       sendJson(response, 400, { error: result.error });
