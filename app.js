@@ -1,5 +1,6 @@
 const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
 const THEME_EDITOR_MODEL_STORAGE_PREFIX = "booking-theme-editor:model:";
+const THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX = "booking-theme-editor:saved-baseline:";
 
 const state = {
   booting: true,
@@ -277,6 +278,12 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-widget-editor-model]")) {
     state.widgetEditor.model = event.target.value;
     persistThemeEditorModelChoice(getActiveThemeEditorKey(), event.target.value);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-editor-use-saved-baseline]")) {
+    state.widgetEditor.useSavedBaseline = event.target.checked;
+    persistThemeEditorSavedBaselineChoice(getActiveThemeEditorKey(), event.target.checked);
   }
 });
 
@@ -1319,6 +1326,20 @@ function renderThemeEditorPage(editor) {
                 placeholder="${escapeHtml(editor.promptPlaceholder)}"
                 data-widget-editor-prompt
               >${escapeHtml(state.widgetEditor.prompt)}</textarea>
+            </div>
+            <div class="field full">
+              <label class="checkbox">
+                <input
+                  id="widget-editor-use-saved-baseline"
+                  type="checkbox"
+                  ${state.widgetEditor.useSavedBaseline ? "checked" : ""}
+                  data-widget-editor-use-saved-baseline
+                />
+                Work from the most recent saved CSS only
+              </label>
+              <p class="meta">
+                Follow-up generations will preserve the latest saved CSS as the baseline and only apply the requested change. If nothing has been saved yet, the baseline is empty.
+              </p>
             </div>
           </div>
           <div class="subsection">
@@ -3542,9 +3563,16 @@ async function handleWidgetEditorGenerate(form) {
   payload.currentCss = state.widgetEditor.draftCss;
   payload.requestText = state.widgetEditor.prompt;
   payload.attachments = state.widgetEditor.attachments;
+  payload.useSavedCssBaseline = state.widgetEditor.useSavedBaseline;
 
   try {
-    setStatus("widgetEditor", "info", "Generating widget CSS...");
+    setStatus(
+      "widgetEditor",
+      "info",
+      state.widgetEditor.useSavedBaseline
+        ? "Generating CSS from the latest saved baseline..."
+        : "Generating CSS from the current draft...",
+    );
     const data = await postJson("/api/widget-editor", payload, "widgetEditor");
     state.widgetEditor.draftCss = data.cssText ?? "";
     state.widgetEditor.lastGeneratedModel = data.model ?? payload.model ?? "";
@@ -4205,6 +4233,22 @@ function loadThemeEditorModelChoice(themeKey) {
   }
 }
 
+function loadThemeEditorSavedBaselineChoice(themeKey) {
+  if (!themeKey) {
+    return true;
+  }
+
+  try {
+    const stored = localStorage.getItem(`${THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX}${themeKey}`);
+    if (stored === null) {
+      return true;
+    }
+    return stored === "true";
+  } catch {
+    return true;
+  }
+}
+
 function persistThemeEditorModelChoice(themeKey, model) {
   if (!themeKey) {
     return;
@@ -4212,6 +4256,19 @@ function persistThemeEditorModelChoice(themeKey, model) {
 
   try {
     localStorage.setItem(`${THEME_EDITOR_MODEL_STORAGE_PREFIX}${themeKey}`, String(model ?? "").trim());
+  } catch {}
+}
+
+function persistThemeEditorSavedBaselineChoice(themeKey, enabled) {
+  if (!themeKey) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      `${THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX}${themeKey}`,
+      enabled ? "true" : "false",
+    );
   } catch {}
 }
 
@@ -4279,6 +4336,7 @@ function createEmptyWidgetEditorState() {
     establishmentId: "",
     model: "gpt-5.4-nano",
     activeKey: "",
+    useSavedBaseline: true,
     promptName: "",
     prompt: "",
     selectedPromptId: "",
@@ -4467,6 +4525,7 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.draftCss = "";
     state.widgetEditor.attachments = [];
     state.widgetEditor.model = loadThemeEditorModelChoice(activeThemeKey) || state.appSettings.openAiModel;
+    state.widgetEditor.useSavedBaseline = loadThemeEditorSavedBaselineChoice(activeThemeKey);
     return;
   }
 
@@ -4489,8 +4548,12 @@ function syncWidgetEditorSelections() {
     state.widgetEditor.draftCss = savedCss;
   }
   const persistedModel = loadThemeEditorModelChoice(activeThemeKey);
+  const persistedSavedBaseline = loadThemeEditorSavedBaselineChoice(activeThemeKey);
   if (!state.widgetEditor.model || previousThemeKey !== activeThemeKey) {
     state.widgetEditor.model = persistedModel || state.appSettings.openAiModel;
+  }
+  if (previousThemeKey !== activeThemeKey) {
+    state.widgetEditor.useSavedBaseline = persistedSavedBaseline;
   }
   state.widgetEditor.activeKey = activeThemeKey;
 

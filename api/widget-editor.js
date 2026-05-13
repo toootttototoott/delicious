@@ -76,9 +76,10 @@ export default async function handler(request, response) {
         companyName: context.companyName,
         establishmentName: context.establishmentName,
         widgetKey: input.widgetKey,
-        currentCss: input.currentCss,
+        currentCss: input.useSavedCssBaseline ? context.cssText : input.currentCss,
         requestText: input.requestText,
         attachments: input.attachments,
+        preserveExistingCss: input.useSavedCssBaseline,
         reasoningEffort: appSettings.openAiReasoningEffort,
         maxOutputTokens: appSettings.widgetEditorMaxOutputTokens,
       });
