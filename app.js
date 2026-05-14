@@ -3954,7 +3954,11 @@ async function handleWidgetEditorPromptSave() {
     { processing: true },
   );
   const data = await postJson("/api/widget-editor", payload, "widgetEditor");
-  state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
+  state.widgetEditor.savedPrompts = mergeWidgetEditorPromptSet(
+    state.widgetEditor.savedPrompts,
+    data.prompts,
+    getActiveThemeEditorKey(),
+  );
   if (data.prompt?.id) {
     state.widgetEditor.selectedPromptId = data.prompt.id;
     state.widgetEditor.promptName = data.prompt.name ?? name;
@@ -3979,7 +3983,11 @@ async function handleWidgetEditorPromptDelete(promptId) {
     { action: "deletePrompt", widgetKey: getActiveThemeEditorKey(), promptId },
     "widgetEditor",
   );
-  state.widgetEditor.savedPrompts = normalizeWidgetEditorPrompts(data.prompts);
+  state.widgetEditor.savedPrompts = mergeWidgetEditorPromptSet(
+    state.widgetEditor.savedPrompts,
+    data.prompts,
+    getActiveThemeEditorKey(),
+  );
   if (state.widgetEditor.selectedPromptId === promptId) {
     clearWidgetEditorPromptSelection({ preservePrompt: false });
   }
@@ -5070,6 +5078,15 @@ function normalizeWidgetEditorPrompts(value) {
       const rightTime = Date.parse(right.updatedAt ?? "") || 0;
       return rightTime - leftTime || left.name.localeCompare(right.name);
     });
+}
+
+function mergeWidgetEditorPromptSet(existingPrompts, nextPrompts, widgetKey) {
+  const normalizedExisting = normalizeWidgetEditorPrompts(existingPrompts);
+  const normalizedNext = normalizeWidgetEditorPrompts(nextPrompts);
+  return normalizeWidgetEditorPrompts([
+    ...normalizedExisting.filter((prompt) => prompt.widgetKey !== widgetKey),
+    ...normalizedNext,
+  ]);
 }
 
 function previewWidgetEditorPrompt(value) {
