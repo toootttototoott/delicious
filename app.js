@@ -1263,6 +1263,18 @@ function renderThemeEditorPage(editor) {
   const uploadLimitLabel = formatMegabytes(state.appSettings.widgetEditorUploadLimitBytes);
   const savedPrompts = getActiveThemeEditorPrompts();
   const hasSavedThemeEditorCss = hasThemeEditorSavedCss(selectedEstablishment, editor.key);
+  const savedBaselineLabel =
+    editor.key === "booking_page_view"
+      ? "Work from the most recent saved page and CSS"
+      : "Work from the most recent saved CSS only";
+  const savedBaselineMeta =
+    editor.key === "booking_page_view"
+      ? hasSavedThemeEditorCss
+        ? "Follow-up generations will preserve the latest saved page structure and CSS as the baseline, but they can still reorder or restructure sections when your prompt asks for it."
+        : "This option becomes available after you save the generated page and CSS once."
+      : hasSavedThemeEditorCss
+        ? "Follow-up generations will preserve the latest saved CSS as the baseline and only apply the requested change."
+        : "This option becomes available after you save CSS once.";
 
   return `
     <section class="layout">
@@ -1366,15 +1378,9 @@ function renderThemeEditorPage(editor) {
                   ${hasSavedThemeEditorCss ? "" : "disabled"}
                   data-widget-editor-use-saved-baseline
                 />
-                Work from the most recent saved CSS only
+                ${escapeHtml(savedBaselineLabel)}
               </label>
-              <p class="meta">
-                ${
-                  hasSavedThemeEditorCss
-                    ? "Follow-up generations will preserve the latest saved CSS as the baseline and only apply the requested change."
-                    : "This option becomes available after you save CSS once."
-                }
-              </p>
+              <p class="meta">${escapeHtml(savedBaselineMeta)}</p>
             </div>
           </div>
           <div class="subsection">
