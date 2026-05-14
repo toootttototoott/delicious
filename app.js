@@ -2828,11 +2828,17 @@ function renderAdminCalendar() {
 
 function renderWidgetModal(activeDate) {
   if (state.widget.modal === "time" && activeDate) {
+    const slotCapacity = Math.max(Number(activeDate.slotCapacity ?? 0), 0);
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
           <p class="eyebrow">Choose a time</p>
           <h3>${escapeHtml(state.widget.selectedDate)}</h3>
+          ${
+            slotCapacity > 0
+              ? `<p class="meta">Each 15-minute slot can book up to ${escapeHtml(String(slotCapacity))} people. For larger bookings, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+              : ""
+          }
           <div class="times-grid">
             ${renderWidgetTimes(activeDate)}
           </div>
@@ -2847,6 +2853,7 @@ function renderWidgetModal(activeDate) {
   if (state.widget.modal === "details") {
     const selectedSlot = activeDate?.slots.find((slot) => slot.time === state.widget.selectedTime) ?? null;
     const remainingSeats = Math.max(Number(selectedSlot?.remaining ?? 0), 0);
+    const slotCapacity = Math.max(Number(selectedSlot?.capacity ?? activeDate?.slotCapacity ?? 0), 0);
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
@@ -2873,6 +2880,11 @@ function renderWidgetModal(activeDate) {
                   value="1"
                   required
                 />
+                ${
+                  slotCapacity > 0
+                    ? `<p class="meta">For bookings over ${escapeHtml(String(slotCapacity))} people, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+                    : ""
+                }
               </div>
               <div class="field">
                 <label for="booking-first-name">First name</label>
@@ -3017,7 +3029,7 @@ function renderAdminSlot(slot) {
       <div class="entity-row">
         <div>
           <strong>${escapeHtml(formatDisplayTime(slot.time))}</strong>
-          <p class="meta">${slot.remaining}/${slot.capacity} seats left</p>
+          <p class="meta">${slot.remaining}/${slot.capacity} seats left in this 15-minute slot</p>
         </div>
         <button
           type="button"
@@ -3099,6 +3111,18 @@ async function handleAction(action, dataset) {
   if (action === "backToTimeModal") {
     state.widget.modal = "time";
     render();
+    return;
+  }
+
+  if (action === "openLargePartyEnquiry") {
+    const limit = String(dataset.limit ?? "").trim();
+    setStatus(
+      "widget",
+      "info",
+      limit
+        ? `Bookings over ${limit} people are not wired up yet. This enquiry link is a placeholder for now.`
+        : "Large-party enquiries are not wired up yet. This enquiry link is a placeholder for now.",
+    );
     return;
   }
 
@@ -5478,13 +5502,13 @@ function getCalendarDayPresentation(availability) {
   }
 
   const hoursLabel = getCalendarDayHoursLabel(availability);
-  const rawSeatLoad =
-    availability.capacity > 0
-      ? 1 - (availability.minRemaining ?? availability.capacity) / availability.capacity
-      : 0;
+  const totalCapacity = Math.max(Number(availability.capacity ?? 0), 0);
+  const totalRemaining = Math.max(Number(availability.remaining ?? 0), 0);
+  const availableSlotCount = Math.max(Number(availability.availableSlotCount ?? 0), 0);
+  const rawSeatLoad = totalCapacity > 0 ? 1 - totalRemaining / totalCapacity : 0;
   const seatLoad = curveSeatLoad(rawSeatLoad);
 
-  if (availability.remaining <= 0 || rawSeatLoad >= 1) {
+  if (availableSlotCount <= 0 || totalRemaining <= 0 || rawSeatLoad >= 1) {
     return {
       caption: hoursLabel,
       className: "is-full status-full",

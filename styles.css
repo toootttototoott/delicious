@@ -390,6 +390,16 @@ label {
   color: var(--muted);
 }
 
+.inline-link {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.inline-link:hover {
+  color: var(--accent);
+}
+
 input,
 select,
 textarea {
