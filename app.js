@@ -59,6 +59,8 @@ const state = {
     selectedDate: "",
     selectedTime: "",
     modal: null,
+    confirmationMessage: "",
+    enquiryPartySize: "",
   },
   adminCalendar: {
     companyId: "",
@@ -221,6 +223,12 @@ document.addEventListener("submit", async (event) => {
   if (event.target.matches("[data-widget-form]")) {
     event.preventDefault();
     await handleWidgetBooking(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-enquiry-form]")) {
+    event.preventDefault();
+    await handleWidgetEnquiry(event.target);
     return;
   }
 
@@ -2581,6 +2589,16 @@ function renderCompanyForm() {
         <label for="company-name">Company name</label>
         <input id="company-name" name="name" value="${escapeHtml(state.companyForm.name)}" required />
       </div>
+      <div class="field">
+        <label for="company-enquiry-email">Enquiry email</label>
+        <input
+          id="company-enquiry-email"
+          name="enquiryEmail"
+          type="email"
+          value="${escapeHtml(state.companyForm.enquiryEmail)}"
+          required
+        />
+      </div>
       <div class="stack-inline">
         <button type="submit">${state.companyForm.mode === "edit" ? "Save company" : "Create company"}</button>
         ${
@@ -2683,6 +2701,7 @@ function renderCompanies() {
             <div class="entity-body">
               <strong>${escapeHtml(company.name)}</strong>
               <p class="meta">${linkedUsers.length} users | ${company.establishments.length} establishments</p>
+              <p class="meta">${escapeHtml(company.enquiryEmail || "No enquiry email set")}</p>
             </div>
             <div class="stack-inline">
               <button type="button" class="ghost-button" data-action="editCompany" data-company-id="${company.id}">Edit</button>
@@ -2773,7 +2792,7 @@ function renderEstablishment(company, establishment) {
                         <span></span>
                       </label>
                       ${escapeHtml(formatSeatCountLabel(seatCount))}
-                      <button type="button" class="mini-button" data-action="editSeatCount" data-establishment-id="${establishment.id}" data-seat-count-id="${seatCount.id}" data-seat-count="${seatCount.seatCount}" data-guest-visit-minutes="${seatCount.guestVisitMinutes}">Edit</button>
+                      <button type="button" class="mini-button" data-action="editSeatCount" data-establishment-id="${establishment.id}" data-seat-count-id="${seatCount.id}" data-seat-count="${seatCount.seatCount}" data-max-party-size="${seatCount.maxPartySize}" data-guest-visit-minutes="${seatCount.guestVisitMinutes}">Edit</button>
                       <button type="button" class="mini-button" data-action="deleteSeatCount" data-seat-count-id="${seatCount.id}">Delete</button>
                     </span>
                   `,
@@ -2874,6 +2893,21 @@ function renderBookingsPanel() {
                     ? `<p class="meta">Viewing the ${escapeHtml(formatSeatCountLabel(selectedSeatCount))} calendar for your establishment.</p>`
                     : ""
                 }
+                ${
+                  isAdminSession() && selectedEstablishment
+                    ? `<div class="stack-inline">
+                        <button
+                          type="button"
+                          class="ghost-button"
+                          data-action="deleteEstablishmentBookings"
+                          data-establishment-id="${selectedEstablishment.id}"
+                          data-establishment-name="${escapeHtml(selectedEstablishment.name)}"
+                        >
+                          Delete all bookings for this establishment
+                        </button>
+                      </div>`
+                    : ""
+                }
               </div>
             </div>
           `
@@ -2922,6 +2956,21 @@ function renderBookingsPanel() {
                     )
                     .join("")}
                 </select>
+                ${
+                  isAdminSession() && selectedEstablishment
+                    ? `<div class="stack-inline">
+                        <button
+                          type="button"
+                          class="ghost-button"
+                          data-action="deleteEstablishmentBookings"
+                          data-establishment-id="${selectedEstablishment.id}"
+                          data-establishment-name="${escapeHtml(selectedEstablishment.name)}"
+                        >
+                          Delete all bookings for this establishment
+                        </button>
+                      </div>`
+                    : ""
+                }
               </div>
             </div>
           `
@@ -3340,17 +3389,119 @@ function renderAdminCalendar() {
 }
 
 function renderWidgetModal(activeDate) {
+  if (state.widget.modal === "confirmed") {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeWidgetModal">
+        <div class="widget-modal" data-modal-panel>
+          <p class="eyebrow">Booking confirmed</p>
+          <h3>Check your email</h3>
+          <p class="meta">${escapeHtml(state.widget.confirmationMessage || "Your booking has been confirmed. Please check your email for the confirmation message.")}</p>
+          <div class="stack-inline">
+            <button type="button" data-action="closeWidgetModal">Done</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.widget.modal === "enquiry") {
+    const selectedSeatCount = getSelectedWidgetSeatCount();
+    const enquiryLimit = Number(state.widget.enquiryPartySize || 0);
+    return `
+      <div class="widget-modal-backdrop" data-action="closeWidgetModal">
+        <div class="widget-modal" data-modal-panel>
+          <p class="eyebrow">Booking enquiry</p>
+          <h3>Send an enquiry</h3>
+          <p class="meta">${
+            enquiryLimit > 0
+              ? `For parties over ${enquiryLimit - 1}, send an enquiry and the team will get back to you.`
+              : "Send an enquiry and the team will get back to you."
+          }</p>
+          <form class="stack widget-form" data-widget-enquiry-form>
+            <input type="hidden" name="action" value="enquiry" />
+            <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
+            <div class="form-grid">
+              <div class="field">
+                <label for="enquiry-party-size">Party size</label>
+                <input
+                  id="enquiry-party-size"
+                  name="partySize"
+                  type="number"
+                  min="${enquiryLimit > 0 ? String(enquiryLimit) : "1"}"
+                  value="${escapeHtml(state.widget.enquiryPartySize || "1")}"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="enquiry-date">Preferred date</label>
+                <input id="enquiry-date" name="bookingDate" type="date" value="${escapeHtml(state.widget.selectedDate)}" />
+              </div>
+              <div class="field">
+                <label for="enquiry-time">Preferred time</label>
+                <input id="enquiry-time" name="bookingTime" type="time" step="900" value="${escapeHtml(state.widget.selectedTime)}" />
+              </div>
+              <div class="field">
+                <label for="enquiry-first-name">First name</label>
+                <input id="enquiry-first-name" name="firstName" required />
+              </div>
+              <div class="field">
+                <label for="enquiry-last-name">Last name</label>
+                <input id="enquiry-last-name" name="lastName" required />
+              </div>
+              <div class="field full">
+                <label for="enquiry-email">Email</label>
+                <input id="enquiry-email" name="email" type="email" required />
+              </div>
+              <div class="field full">
+                <label for="enquiry-phone">Phone</label>
+                <input id="enquiry-phone" name="phone" required />
+              </div>
+              <div class="field full">
+                <label for="enquiry-notes">Details</label>
+                <textarea id="enquiry-notes" name="notes" rows="4" placeholder="Tell us anything useful about your enquiry."></textarea>
+              </div>
+            </div>
+            ${
+              selectedSeatCount?.companyEnquiryEmail
+                ? `<p class="meta">This enquiry will be sent to ${escapeHtml(selectedSeatCount.companyEnquiryEmail)}.</p>`
+                : ""
+            }
+            <div class="stack-inline">
+              <button type="submit">Send enquiry</button>
+              <button type="button" class="ghost-button" data-action="closeWidgetModal">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.widget.modal === "enquirySent") {
+    return `
+      <div class="widget-modal-backdrop" data-action="closeWidgetModal">
+        <div class="widget-modal" data-modal-panel>
+          <p class="eyebrow">Enquiry sent</p>
+          <h3>We’ve passed it on</h3>
+          <p class="meta">Your enquiry has been sent. The team will get back to you by email.</p>
+          <div class="stack-inline">
+            <button type="button" data-action="closeWidgetModal">Done</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   if (state.widget.modal === "time" && activeDate) {
-    const slotCapacity = Math.max(Number(activeDate.slotCapacity ?? 0), 0);
-    const visitDurationLabel = formatVisitDuration(activeDate.guestVisitMinutes);
+    const maxPartySize = Math.max(Number(activeDate.maxPartySize ?? 0), 0);
+    const selectedSeatCount = getSelectedWidgetSeatCount();
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
           <p class="eyebrow">Choose a time</p>
           <h3>${escapeHtml(state.widget.selectedDate)}</h3>
           ${
-            slotCapacity > 0
-              ? `<p class="meta">Each ${escapeHtml(visitDurationLabel)} booking window can host up to ${escapeHtml(String(slotCapacity))} people. For larger bookings, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+            maxPartySize > 0 && selectedSeatCount?.companyEnquiryEmail
+              ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
               : ""
           }
           <div class="times-grid">
@@ -3368,7 +3519,9 @@ function renderWidgetModal(activeDate) {
     const selectedSlot = activeDate?.slots.find((slot) => slot.time === state.widget.selectedTime) ?? null;
     const remainingSeats = Math.max(Number(selectedSlot?.remaining ?? 0), 0);
     const slotCapacity = Math.max(Number(selectedSlot?.capacity ?? activeDate?.slotCapacity ?? 0), 0);
-    const visitDurationLabel = formatVisitDuration(activeDate?.guestVisitMinutes);
+    const maxPartySize = Math.max(Number(activeDate?.maxPartySize ?? slotCapacity), 0);
+    const maxBookablePartySize = Math.max(Math.min(remainingSeats || 0, maxPartySize || slotCapacity || 0), 1);
+    const selectedSeatCount = getSelectedWidgetSeatCount();
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
@@ -3376,8 +3529,8 @@ function renderWidgetModal(activeDate) {
           <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(formatDisplayTime(state.widget.selectedTime))}</h3>
           <p class="meta">${
             remainingSeats > 0
-              ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available during this ${visitDurationLabel} visit window`
-              : `No seats available during this ${visitDurationLabel} visit window`
+              ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available`
+              : "No seats available"
           }</p>
           <form class="stack widget-form" data-widget-form>
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
@@ -3391,13 +3544,13 @@ function renderWidgetModal(activeDate) {
                   name="partySize"
                   type="number"
                   min="1"
-                  max="${remainingSeats || 1}"
+                  max="${maxBookablePartySize}"
                   value="1"
                   required
                 />
                 ${
-                  slotCapacity > 0
-                    ? `<p class="meta">For bookings over ${escapeHtml(String(slotCapacity))} people in one ${escapeHtml(visitDurationLabel)} visit window, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+                  maxPartySize > 0 && selectedSeatCount?.companyEnquiryEmail
+                    ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
                     : ""
                 }
               </div>
@@ -3649,6 +3802,8 @@ async function handleAction(action, dataset) {
   if (action === "selectWidgetDate") {
     state.widget.selectedDate = dataset.date;
     state.widget.selectedTime = "";
+    state.widget.confirmationMessage = "";
+    state.widget.enquiryPartySize = "";
     state.widget.modal = "time";
     render();
     return;
@@ -3662,6 +3817,8 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "closeWidgetModal") {
+    state.widget.confirmationMessage = "";
+    state.widget.enquiryPartySize = "";
     state.widget.modal = null;
     render();
     return;
@@ -3674,14 +3831,17 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "openLargePartyEnquiry") {
-    const limit = String(dataset.limit ?? "").trim();
-    setStatus(
-      "widget",
-      "info",
-      limit
-        ? `Bookings over ${limit} people are not wired up yet. This enquiry link is a placeholder for now.`
-        : "Large-party enquiries are not wired up yet. This enquiry link is a placeholder for now.",
-    );
+    const selectedSeatCount = getSelectedWidgetSeatCount();
+    if (!selectedSeatCount?.companyEnquiryEmail) {
+      setStatus("widget", "error", "This company does not have an enquiry email configured yet.");
+      return;
+    }
+
+    const limit = Number(dataset.limit ?? 0);
+    state.widget.enquiryPartySize = limit > 0 ? String(limit + 1) : "";
+    state.widget.modal = "enquiry";
+    clearStatus("widget");
+    render();
     return;
   }
 
@@ -3758,6 +3918,43 @@ async function handleAction(action, dataset) {
     }
     state.adminCalendar.modal = "day";
     setStatus("bookings", "success", "Booking deleted.");
+    return;
+  }
+
+  if (action === "deleteEstablishmentBookings") {
+    if (!isAdminSession()) {
+      setStatus("bookings", "error", "Only admins can delete all bookings for an establishment.");
+      return;
+    }
+
+    const establishmentName = String(dataset.establishmentName ?? "this establishment").trim();
+    if (
+      !confirm(
+        `Delete all bookings for ${establishmentName}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    clearBookingWorkspaceResults();
+    setStatus("bookings", "info", "Deleting all bookings for this establishment...");
+    const data = await postJson(
+      "/api/bookings",
+      {
+        action: "deleteEstablishmentBookings",
+        establishmentId: dataset.establishmentId,
+      },
+      "bookings",
+    );
+    await refreshAdminAvailability();
+    if (getSelectedWidgetSeatCount()?.establishmentId === state.adminCalendar.establishmentId) {
+      await refreshWidgetAvailability();
+    }
+    state.adminCalendar.modal = null;
+    state.adminCalendar.editingBookingId = "";
+    state.adminCalendar.selectedTime = "";
+    setStatus("bookings", "success", data.message ?? "All bookings deleted for that establishment.");
+    render();
     return;
   }
 
@@ -3987,6 +4184,7 @@ async function handleAction(action, dataset) {
       mode: "edit",
       companyId: company.id,
       name: company.name,
+      enquiryEmail: company.enquiryEmail || "",
     };
     clearStatus("companies");
     render();
@@ -4116,6 +4314,7 @@ async function handleAction(action, dataset) {
         action: "createSeatCount",
         establishmentId: dataset.establishmentId,
         seatCount: config.seatCount,
+        maxPartySize: config.maxPartySize,
         guestVisitMinutes: config.guestVisitMinutes,
       },
       "companies",
@@ -4128,6 +4327,7 @@ async function handleAction(action, dataset) {
   if (action === "editSeatCount") {
     const config = promptForSeatCountConfig({
       seatCount: dataset.seatCount,
+      maxPartySize: dataset.maxPartySize,
       guestVisitMinutes: dataset.guestVisitMinutes,
     });
     if (!config) {
@@ -4142,6 +4342,7 @@ async function handleAction(action, dataset) {
         seatCountId: dataset.seatCountId,
         establishmentId: dataset.establishmentId,
         seatCount: config.seatCount,
+        maxPartySize: config.maxPartySize,
         guestVisitMinutes: config.guestVisitMinutes,
       },
       "companies",
@@ -4350,6 +4551,7 @@ async function handleWidgetBooking(form) {
   const selectedSlot = activeDate?.slots.find((slot) => slot.time === payload.bookingTime) ?? null;
   const remainingSeats = Number(selectedSlot?.remaining ?? 0);
   const requestedSeats = Number(payload.partySize ?? 0);
+  const maxPartySize = Number(activeDate?.maxPartySize ?? 0);
 
   if (!payload.bookingDate || !payload.bookingTime) {
     setStatus("widget", "error", "Choose a day and time before booking.");
@@ -4375,13 +4577,30 @@ async function handleWidgetBooking(form) {
     return;
   }
 
+  if (maxPartySize > 0 && requestedSeats > maxPartySize) {
+    setStatus("widget", "error", `For parties over ${maxPartySize}, enquire here instead.`);
+    return;
+  }
+
   setStatus("widget", "info", "Saving booking...");
   const data = await postJson("/api/widget", payload, "widget");
   form.reset();
   state.widget.selectedTime = "";
-  state.widget.modal = null;
+  state.widget.confirmationMessage =
+    data.message ?? "Your booking has been confirmed. Please check your email for the confirmation message.";
+  state.widget.modal = "confirmed";
   await refreshWidgetAvailability();
   setStatus("widget", "success", data.message ?? "Booking confirmed.");
+}
+
+async function handleWidgetEnquiry(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  setStatus("widget", "info", "Sending enquiry...");
+  const data = await postJson("/api/widget", payload, "widget");
+  form.reset();
+  state.widget.enquiryPartySize = "";
+  state.widget.modal = "enquirySent";
+  setStatus("widget", "success", data.message ?? "Your enquiry has been sent.");
 }
 
 async function handleAdminBookingSubmit(form) {
@@ -5324,8 +5543,8 @@ function syncAdminFormDraft(target) {
 
   const companyForm = target.closest("[data-company-form]");
   if (companyForm) {
-    if (target.name === "name") {
-      state.companyForm.name = target.value;
+    if (target.name === "name" || target.name === "enquiryEmail") {
+      state.companyForm[target.name] = target.value;
       return true;
     }
   }
@@ -5459,6 +5678,7 @@ function createEmptyCompanyForm() {
     mode: "create",
     companyId: null,
     name: "",
+    enquiryEmail: "",
   };
 }
 
@@ -6048,6 +6268,7 @@ function getSeatCountById(seatCountId) {
             ...seatCount,
             label: formatSeatCountLabel(seatCount),
             companyName: company.name,
+            companyEnquiryEmail: company.enquiryEmail || "",
             establishmentName: establishment.name,
             establishmentLabel: `${company.name} | ${establishment.name}`,
             widgetThemeCss: establishment.widgetTheme?.cssText ?? "",
@@ -6213,7 +6434,8 @@ function getThemeEditorPreviewPayload() {
 function formatSeatCountLabel(seatCount) {
   const capacity = Math.max(Number(seatCount?.seatCount ?? 0), 0);
   const visitDurationLabel = formatVisitDuration(seatCount?.guestVisitMinutes);
-  return `${capacity} max guests | ${visitDurationLabel} visits`;
+  const maxPartySize = Math.max(Number(seatCount?.maxPartySize ?? capacity), 0);
+  return `${capacity} max guests | ${visitDurationLabel} visits | ${maxPartySize} online`;
 }
 
 function formatVisitDuration(minutes) {
@@ -6238,8 +6460,16 @@ function promptForSeatCountConfig(current = {}) {
     return null;
   }
 
+  const maxPartySize = prompt(
+    "Max online booking party size",
+    String(current.maxPartySize ?? current.seatCount ?? "40"),
+  );
+  if (maxPartySize === null) {
+    return null;
+  }
+
   const guestVisitMinutes = prompt(
-    "Guest visit time in minutes (15-minute increments)",
+    "Guest visit time in minutes",
     String(current.guestVisitMinutes ?? "90"),
   );
   if (guestVisitMinutes === null) {
@@ -6248,6 +6478,7 @@ function promptForSeatCountConfig(current = {}) {
 
   return {
     seatCount: String(seatCount).trim(),
+    maxPartySize: String(maxPartySize).trim(),
     guestVisitMinutes: String(guestVisitMinutes).trim(),
   };
 }

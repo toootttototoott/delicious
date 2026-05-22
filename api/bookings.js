@@ -2,6 +2,7 @@ import {
   createBooking,
   clearSeatCountClosedDate,
   deleteBooking,
+  deleteBookingsForEstablishment,
   getBooking,
   getSeatCountContext,
   listBookingReport,
@@ -234,6 +235,34 @@ export default async function handler(request, response) {
         }
 
         sendJson(response, 200, { message: "Booking deleted." });
+        return;
+      }
+
+      if (action === "deleteEstablishmentBookings") {
+        if (session?.authLevel !== "admin") {
+          sendJson(response, 403, { error: "Only admins can delete all bookings for an establishment." });
+          return;
+        }
+
+        const establishmentId = String(body.establishmentId ?? "").trim();
+        if (!establishmentId) {
+          sendJson(response, 400, { error: "Establishment is required." });
+          return;
+        }
+
+        const result = await deleteBookingsForEstablishment(establishmentId);
+        if (result.error) {
+          sendJson(response, 400, { error: result.error });
+          return;
+        }
+
+        sendJson(response, 200, {
+          message:
+            result.deletedCount > 0
+              ? `${result.deletedCount} booking${result.deletedCount === 1 ? "" : "s"} deleted for that establishment.`
+              : "No bookings were found for that establishment.",
+          deletedCount: result.deletedCount,
+        });
         return;
       }
 

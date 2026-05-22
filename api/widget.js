@@ -1,12 +1,17 @@
 import {
   createBooking,
+  getSeatCountContext,
   getPublicWidgetCatalogForSeatCount,
   listSeatCountAvailability,
   listWidgetCatalog,
   sanitizeBookingInput,
 } from "../lib/bookings.js";
 import { ensureSchema } from "../lib/db.js";
-import { sendBookingConfirmationForBooking } from "../lib/email.js";
+import {
+  sanitizeBookingEnquiryInput,
+  sendBookingConfirmationForBooking,
+  sendBookingEnquiryEmail,
+} from "../lib/email.js";
 import { readBody, sendJson } from "../lib/http.js";
 
 export default async function handler(request, response) {
@@ -55,9 +60,54 @@ export default async function handler(request, response) {
 
   if (request.method === "POST") {
     const body = await readBody(request);
+    const action = body.action ?? "create";
+
+    if (action === "enquiry") {
+      const config = await getPublicWidgetCatalogForSeatCount(body.seatCountId);
+      if (config.error) {
+        sendJson(response, 400, { error: config.error });
+        return;
+      }
+
+      const company = config.catalog?.[0] ?? null;
+      const establishment = company?.establishments?.[0] ?? null;
+      const input = sanitizeBookingEnquiryInput({
+        ...body,
+        recipientEmail: company?.enquiryEmail ?? "",
+        companyName: company?.name ?? "",
+        establishmentName: establishment?.name ?? "",
+      });
+      if (input.error) {
+        sendJson(response, 400, { error: input.error });
+        return;
+      }
+
+      const result = await trySendBookingEnquiry(input);
+      if (!result.sent) {
+        sendJson(response, 400, { error: result.reason ?? "Enquiry email could not be sent." });
+        return;
+      }
+
+      sendJson(response, 201, { message: "Your enquiry has been sent." });
+      return;
+    }
+
     const input = sanitizeBookingInput(body);
     if (input.error) {
       sendJson(response, 400, { error: input.error });
+      return;
+    }
+
+    const seatCount = await getSeatCountContext(input.seatCountId);
+    if (!seatCount) {
+      sendJson(response, 400, { error: "Selected seat count does not exist." });
+      return;
+    }
+
+    if (input.partySize > seatCount.maxPartySize) {
+      sendJson(response, 400, {
+        error: `For parties over ${seatCount.maxPartySize}, enquire here instead.`,
+      });
       return;
     }
 
@@ -103,4 +153,16 @@ async function trySendBookingConfirmation(bookingId) {
     sent: false,
     message: "Booking confirmed. The confirmation email could not be sent.",
   };
+}
+
+async function trySendBookingEnquiry(input) {
+  try {
+    return await sendBookingEnquiryEmail(input);
+  } catch (error) {
+    console.error("Booking enquiry email failed", error);
+    return {
+      sent: false,
+      reason: "Enquiry email could not be sent.",
+    };
+  }
 }
