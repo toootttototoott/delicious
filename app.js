@@ -1992,15 +1992,6 @@ function renderEmailSettingsPanel() {
             />
           </div>
           <div class="field">
-            <label for="email-test-company">Company</label>
-            <input
-              id="email-test-company"
-              name="companyName"
-              value="${escapeHtml(state.emailTestDraft.companyName)}"
-              data-email-test-draft
-            />
-          </div>
-          <div class="field">
             <label for="email-test-establishment">Establishment</label>
             <input
               id="email-test-establishment"
@@ -5014,7 +5005,6 @@ function createDefaultEmailTestDraft() {
     lastName: "Taylor",
     guestEmail: "jordan.taylor@example.com",
     phone: "+61 400 123 456",
-    companyName: "Pete N Joel",
     establishmentName: "Main Dining Room",
     bookingDate: todayString(),
     bookingTime: "19:00",
