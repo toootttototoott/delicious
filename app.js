@@ -3491,6 +3491,7 @@ function renderWidgetModal(activeDate) {
                 ? `<p class="meta">This enquiry will be sent to ${escapeHtml(selectedSeatCount.companyEnquiryEmail)}.</p>`
                 : ""
             }
+            <div class="status" aria-live="polite"></div>
             <div class="stack-inline">
               <button type="submit">Send enquiry</button>
               <button type="button" class="ghost-button" data-action="closeWidgetModal">Cancel</button>
@@ -3602,6 +3603,7 @@ function renderWidgetModal(activeDate) {
                 <input id="booking-notes" name="notes" />
               </div>
             </div>
+            <div class="status" aria-live="polite"></div>
             <div class="stack-inline">
               <button type="submit" ${remainingSeats > 0 ? "" : "disabled"}>Book selected slot</button>
               <button type="button" class="ghost-button" data-action="backToTimeModal">Back</button>
@@ -4574,6 +4576,10 @@ async function handleCompanySubmit(form) {
 }
 
 async function handleWidgetBooking(form) {
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
   const payload = Object.fromEntries(new FormData(form).entries());
   const activeDate = state.widgetAvailability.find((item) => item.date === payload.bookingDate);
   const selectedSlot = activeDate?.slots.find((slot) => slot.time === payload.bookingTime) ?? null;
@@ -4619,25 +4625,47 @@ async function handleWidgetBooking(form) {
     return;
   }
 
-  setStatus("widget", "info", "Saving booking...");
-  const data = await postJson("/api/widget", payload, "widget");
-  form.reset();
-  state.widget.selectedTime = "";
-  state.widget.confirmationMessage =
-    data.message ?? "Your booking has been confirmed. Please check your email for the confirmation message.";
-  state.widget.modal = "confirmed";
-  await refreshWidgetAvailability();
-  setStatus("widget", "success", data.message ?? "Booking confirmed.");
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "info", "Saving booking...");
+  setSubmitPending(form, true, "Saving booking...");
+
+  try {
+    const data = await postJson("/api/widget", payload, "widget");
+    form.reset();
+    state.widget.selectedTime = "";
+    state.widget.confirmationMessage =
+      data.message ?? "Your booking has been confirmed. Please check your email for the confirmation message.";
+    state.widget.modal = "confirmed";
+    await refreshWidgetAvailability();
+    setStatus("widget", "success", data.message ?? "Booking confirmed.");
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Booking could not be saved.");
+    setSubmitPending(form, false, "Book selected slot");
+    form.dataset.pending = "false";
+  }
 }
 
 async function handleWidgetEnquiry(form) {
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
   const payload = Object.fromEntries(new FormData(form).entries());
-  setStatus("widget", "info", "Sending enquiry...");
-  const data = await postJson("/api/widget", payload, "widget");
-  form.reset();
-  state.widget.enquiryPartySize = "";
-  state.widget.modal = "enquirySent";
-  setStatus("widget", "success", data.message ?? "Your enquiry has been sent.");
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "info", "Sending enquiry...");
+  setSubmitPending(form, true, "Sending enquiry...");
+
+  try {
+    const data = await postJson("/api/widget", payload, "widget");
+    form.reset();
+    state.widget.enquiryPartySize = "";
+    state.widget.modal = "enquirySent";
+    setStatus("widget", "success", data.message ?? "Your enquiry has been sent.");
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Enquiry could not be sent.");
+    setSubmitPending(form, false, "Send enquiry");
+    form.dataset.pending = "false";
+  }
 }
 
 async function handleAdminBookingSubmit(form) {
