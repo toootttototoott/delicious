@@ -44,6 +44,7 @@ const state = {
   selectedCompanyIds: new Set(),
   selectedEstablishmentIds: new Set(),
   selectedSeatCountIds: new Set(),
+  dirtyOpeningHoursEstablishmentIds: new Set(),
   userForm: createEmptyUserForm(),
   companyForm: createEmptyCompanyForm(),
   widgetSetup: {
@@ -369,11 +370,25 @@ document.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-widget-party-size]")) {
     clampWidgetPartySizeInput(event.target);
+    return;
+  }
+
+  if (
+    event.target.matches("[data-hours-open]") ||
+    event.target.matches("[data-hours-start]") ||
+    event.target.matches("[data-hours-end]")
+  ) {
+    markOpeningHoursDirty(event.target);
   }
 });
 
 document.addEventListener("change", async (event) => {
   if (syncAdminFormDraft(event.target)) {
+    return;
+  }
+
+  if (event.target.matches("[data-widget-party-size]")) {
+    clampWidgetPartySizeInput(event.target);
     return;
   }
 
@@ -4276,6 +4291,7 @@ async function handleAction(action, dataset) {
       { action: "updateOpeningHours", establishmentId: dataset.establishmentId, openingHours },
       "companies",
     );
+    state.dirtyOpeningHoursEstablishmentIds.delete(dataset.establishmentId);
     await refreshAdminState();
     setStatus("companies", "success", "Opening hours updated.");
     return;
@@ -4564,6 +4580,7 @@ async function handleWidgetBooking(form) {
   const remainingSeats = Number(selectedSlot?.remaining ?? 0);
   const requestedSeats = Number(payload.partySize ?? 0);
   const maxPartySize = Number(activeDate?.maxPartySize ?? 0);
+  const selectedSeatCount = getSelectedWidgetSeatCount();
 
   if (!payload.bookingDate || !payload.bookingTime) {
     setStatus("widget", "error", "Choose a day and time before booking.");
@@ -4590,6 +4607,14 @@ async function handleWidgetBooking(form) {
   }
 
   if (maxPartySize > 0 && requestedSeats > maxPartySize) {
+    if (selectedSeatCount?.companyEnquiryEmail) {
+      state.widget.enquiryPartySize = String(requestedSeats);
+      state.widget.modal = "enquiry";
+      setStatus("widget", "info", `For parties over ${maxPartySize}, send an enquiry instead.`);
+      render();
+      return;
+    }
+
     setStatus("widget", "error", `For parties over ${maxPartySize}, enquire here instead.`);
     return;
   }
@@ -5259,7 +5284,8 @@ function syncLiveRefresh() {
     location.pathname === "/settings" &&
     hasSettingsAccess() &&
     Boolean(state.adminCalendar.seatCountId) &&
-    !settingsInputActive;
+    !settingsInputActive &&
+    state.dirtyOpeningHoursEstablishmentIds.size === 0;
 
   if (widgetShouldPoll && !widgetLiveRefreshHandle) {
     widgetLiveRefreshHandle = setInterval(() => {
@@ -6462,6 +6488,20 @@ function clampWidgetPartySizeInput(target) {
   }
 
   target.value = String(Math.min(Math.max(Math.trunc(rawValue), 1), maxBookablePartySize));
+}
+
+function markOpeningHoursDirty(target) {
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const establishmentId = String(target.dataset.establishmentId ?? "").trim();
+  if (!establishmentId) {
+    return;
+  }
+
+  state.dirtyOpeningHoursEstablishmentIds.add(establishmentId);
+  syncLiveRefresh();
 }
 
 function formatVisitDuration(minutes) {
