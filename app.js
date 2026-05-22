@@ -19,6 +19,7 @@ const state = {
   widgetEditorUploadLimitDraftMb: formatMegabytes(
     createDefaultAppSettings().widgetEditorUploadLimitBytes,
   ),
+  emailTestDraft: createDefaultEmailTestDraft(),
   widgetCatalog: [],
   widgetAvailability: [],
   statuses: {
@@ -29,6 +30,7 @@ const state = {
     widget: null,
     widgetSetup: null,
     openaiSettings: null,
+    emailSettings: null,
     widgetEditor: null,
   },
   filters: {
@@ -215,6 +217,12 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  if (event.target.matches("[data-email-test-form]")) {
+    event.preventDefault();
+    await handleEmailTestSubmit(event.target);
+    return;
+  }
+
   if (event.target.matches("[data-widget-editor-generate-form]")) {
     event.preventDefault();
     await handleWidgetEditorGenerate(event.target);
@@ -256,6 +264,11 @@ document.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-widget-editor-max-output-tokens-draft]")) {
     state.widgetEditorMaxOutputTokensDraft = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-email-test-draft]")) {
+    state.emailTestDraft[event.target.name] = event.target.value;
     return;
   }
 
@@ -514,6 +527,9 @@ async function loadSession() {
   const payload = await readApiResponse(response);
   state.session = payload.session;
   state.userCount = Number(payload.userCount ?? 0);
+  if (!state.emailTestDraft.recipientEmail && state.session?.email) {
+    state.emailTestDraft.recipientEmail = state.session.email;
+  }
   if (!hasSettingsAccess()) {
     state.users = [];
     state.companies = [];
@@ -901,6 +917,26 @@ function renderSettingsPage() {
 
   return `
     <section class="layout">
+      ${renderSectionPanel({
+        id: "settings-email",
+        eyebrow: "Email",
+        title: "Booking confirmation email",
+        meta: "Test the live SMTP connection and preview the exact confirmation layout sent to guests after a booking is created.",
+        open: true,
+        content: `
+          <div class="section-content-grid">
+            <div class="inner-panel">
+              ${renderEmailSettingsPanel()}
+              ${renderStatus("emailSettings")}
+            </div>
+            <div class="inner-panel">
+              <p class="eyebrow">Delivery setup</p>
+              <h3>SMTP environment</h3>
+              ${renderEmailConfigSummary()}
+            </div>
+          </div>
+        `,
+      })}
       ${renderSectionPanel({
         id: "settings-system",
         eyebrow: "System",
@@ -1893,6 +1929,176 @@ function renderSessionSummary(compact = false) {
   `;
 }
 
+function renderEmailSettingsPanel() {
+  return `
+    <div class="stack">
+      <div>
+        <p class="eyebrow">Test send</p>
+        <h3>Send a real confirmation email</h3>
+        <p class="meta">This uses the live SMTP environment variables and the same HTML template sent after a booking is created.</p>
+      </div>
+      <form class="stack" data-email-test-form>
+        <div class="form-grid">
+          <div class="field full">
+            <label for="email-test-recipient">Send preview to</label>
+            <input
+              id="email-test-recipient"
+              name="recipientEmail"
+              type="email"
+              value="${escapeHtml(state.emailTestDraft.recipientEmail)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-first-name">Guest first name</label>
+            <input
+              id="email-test-first-name"
+              name="firstName"
+              value="${escapeHtml(state.emailTestDraft.firstName)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-last-name">Guest last name</label>
+            <input
+              id="email-test-last-name"
+              name="lastName"
+              value="${escapeHtml(state.emailTestDraft.lastName)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-guest-email">Guest email shown in confirmation</label>
+            <input
+              id="email-test-guest-email"
+              name="guestEmail"
+              type="email"
+              value="${escapeHtml(state.emailTestDraft.guestEmail)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-phone">Guest phone</label>
+            <input
+              id="email-test-phone"
+              name="phone"
+              value="${escapeHtml(state.emailTestDraft.phone)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-company">Company</label>
+            <input
+              id="email-test-company"
+              name="companyName"
+              value="${escapeHtml(state.emailTestDraft.companyName)}"
+              data-email-test-draft
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-establishment">Establishment</label>
+            <input
+              id="email-test-establishment"
+              name="establishmentName"
+              value="${escapeHtml(state.emailTestDraft.establishmentName)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-date">Booking date</label>
+            <input
+              id="email-test-date"
+              name="bookingDate"
+              type="date"
+              value="${escapeHtml(state.emailTestDraft.bookingDate)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-time">Booking time</label>
+            <input
+              id="email-test-time"
+              name="bookingTime"
+              type="time"
+              value="${escapeHtml(state.emailTestDraft.bookingTime)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="email-test-party-size">Party size</label>
+            <input
+              id="email-test-party-size"
+              name="partySize"
+              type="number"
+              min="1"
+              step="1"
+              value="${escapeHtml(state.emailTestDraft.partySize)}"
+              data-email-test-draft
+              required
+            />
+          </div>
+          <div class="field full">
+            <label for="email-test-notes">Special requests</label>
+            <textarea
+              id="email-test-notes"
+              name="notes"
+              rows="4"
+              data-email-test-draft
+            >${escapeHtml(state.emailTestDraft.notes)}</textarea>
+          </div>
+        </div>
+        <div class="email-test-summary">
+          <strong>Template contents</strong>
+          <span>The email includes the booking reference, venue, guest details, date, time, party size, phone, and notes in a production-style layout.</span>
+        </div>
+        <div class="stack-inline">
+          <button type="submit">Send test email</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function renderEmailConfigSummary() {
+  const emailSettings = state.appSettings.emailSettings ?? createDefaultEmailSettingsSummary();
+  const statusLabel = emailSettings.configured ? "Ready to send" : "Configuration incomplete";
+  const secureLabel = emailSettings.secure ? "TLS / SSL" : "STARTTLS or plain";
+
+  return `
+    <div class="stack">
+      <div class="config-pill-row">
+        <span class="config-pill ${emailSettings.configured ? "is-good" : "is-warn"}">${escapeHtml(statusLabel)}</span>
+        <span class="config-pill">${escapeHtml(emailSettings.host || "No host")}</span>
+        <span class="config-pill">Port ${escapeHtml(emailSettings.port || "unset")}</span>
+        <span class="config-pill">${escapeHtml(secureLabel)}</span>
+      </div>
+      <div class="email-config-list">
+        <div class="email-config-row">
+          <strong>From address</strong>
+          <span>${escapeHtml(emailSettings.fromAddress || "Not set")}</span>
+        </div>
+        <div class="email-config-row">
+          <strong>SMTP user</strong>
+          <span>${escapeHtml(emailSettings.user || "Not set")}</span>
+        </div>
+      </div>
+      ${
+        emailSettings.missingEnvVars?.length
+          ? `<p class="meta">Missing environment variables: ${escapeHtml(emailSettings.missingEnvVars.join(", "))}</p>`
+          : `<p class="meta">All required SMTP variables are present. Test sends will use these live values immediately.</p>`
+      }
+    </div>
+  `;
+}
+
 function renderOpenAiSettingsForm() {
   return `
     <form class="stack" data-openai-settings-form>
@@ -2765,7 +2971,7 @@ function renderWidgetCalendar() {
         data-date="${date}"
         data-fullness="${presentation.status}"
         style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
-        ${availability?.isOpen ? "" : "disabled"}
+        ${availability?.canBook ? "" : "disabled"}
       >
         <span class="calendar-number">${day}</span>
         <span class="calendar-caption">${presentation.caption}</span>
@@ -2948,6 +3154,7 @@ function renderWidgetTimes(activeDate) {
 function renderAdminCalendarModal() {
   const activeDate =
     state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate) ?? null;
+  const canManageClosures = canManageBookingClosures();
 
   if (state.adminCalendar.modal === "day" && activeDate) {
     return `
@@ -2957,13 +3164,34 @@ function renderAdminCalendarModal() {
           <h3>${escapeHtml(state.adminCalendar.selectedDate)}</h3>
           <p class="meta">
             ${
-              activeDate.isOpen
+              activeDate.isBlocked
+                ? "No more bookings are being accepted for this day."
+                : activeDate.isOpen
                 ? `${escapeHtml(formatDisplayTime(activeDate.openTime))} to ${escapeHtml(formatDisplayTime(activeDate.closeTime))}`
                 : "Closed"
             }
           </p>
+          ${
+            canManageClosures && (activeDate.isOpen || activeDate.isBlocked)
+              ? `<div class="stack-inline">
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    data-action="${activeDate.isBlocked ? "reopenAdminDate" : "closeAdminDate"}"
+                    data-seat-count-id="${escapeHtml(state.adminCalendar.seatCountId)}"
+                    data-date="${escapeHtml(activeDate.date)}"
+                  >
+                    ${activeDate.isBlocked ? "Reopen bookings for this day" : "Stop bookings for this day"}
+                  </button>
+                </div>`
+              : ""
+          }
           <div class="admin-slot-list">
-            ${activeDate.isOpen ? activeDate.slots.map((slot) => renderAdminSlot(slot)).join("") : '<div class="empty">This day is closed.</div>'}
+            ${
+              activeDate.isOpen
+                ? activeDate.slots.map((slot) => renderAdminSlot(slot, { isBlocked: activeDate.isBlocked })).join("")
+                : '<div class="empty">This day is closed.</div>'
+            }
           </div>
           <div class="stack-inline">
             <button type="button" class="ghost-button" data-action="closeAdminCalendarModal">Close</button>
@@ -3023,7 +3251,8 @@ function renderAdminCalendarModal() {
   return "";
 }
 
-function renderAdminSlot(slot) {
+function renderAdminSlot(slot, options = {}) {
+  const isBlocked = options.isBlocked === true;
   return `
     <div class="nested-card">
       <div class="entity-row">
@@ -3036,6 +3265,7 @@ function renderAdminSlot(slot) {
           class="ghost-button"
           data-action="createAdminBooking"
           data-time="${slot.time}"
+          ${isBlocked ? "disabled" : ""}
         >
           Add booking
         </button>
@@ -3161,6 +3391,13 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "createAdminBooking") {
+    const activeDate =
+      state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate) ?? null;
+    if (activeDate?.isBlocked) {
+      setStatus("bookings", "error", "No more bookings are being accepted for that day.");
+      return;
+    }
+
     state.adminCalendar.selectedTime = dataset.time;
     state.adminCalendar.editingBookingId = "";
     state.adminCalendar.modal = "form";
@@ -3199,6 +3436,32 @@ async function handleAction(action, dataset) {
     state.adminCalendar.modal = "day";
     state.adminCalendar.editingBookingId = "";
     render();
+    return;
+  }
+
+  if (action === "closeAdminDate" || action === "reopenAdminDate") {
+    if (!canManageBookingClosures()) {
+      setStatus("bookings", "error", "Only admins and managers can change booking-day availability.");
+      return;
+    }
+
+    const closing = action === "closeAdminDate";
+    setStatus("bookings", "info", closing ? "Stopping bookings for this day..." : "Reopening bookings for this day...");
+    const data = await postJson(
+      "/api/bookings",
+      {
+        action: closing ? "closeDate" : "reopenDate",
+        seatCountId: dataset.seatCountId,
+        bookingDate: dataset.date,
+      },
+      "bookings",
+    );
+    await refreshAdminAvailability();
+    if (state.widget.seatCountId === state.adminCalendar.seatCountId) {
+      await refreshWidgetAvailability();
+    }
+    state.adminCalendar.modal = "day";
+    setStatus("bookings", "success", data.message ?? (closing ? "Bookings stopped for that day." : "Bookings reopened for that day."));
     return;
   }
 
@@ -3718,6 +3981,15 @@ async function handleOpenAiSettingsSubmit(form) {
   setStatus("openaiSettings", "success", data.message ?? "OpenAI settings updated.");
 }
 
+async function handleEmailTestSubmit(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.action = "sendTestBookingConfirmationEmail";
+
+  setStatus("emailSettings", "info", "Sending test booking confirmation email...");
+  const data = await postJson("/api/app-settings", payload, "emailSettings");
+  setStatus("emailSettings", "success", data.message ?? "Test booking confirmation email sent.");
+}
+
 async function searchAdminBookings() {
   if (!state.adminCalendar.seatCountId) {
     setStatus("bookings", "error", "Choose a seat-count calendar first.");
@@ -4175,6 +4447,7 @@ async function logout() {
   state.users = [];
   state.companies = [];
   state.appSettings = createDefaultAppSettings();
+  state.emailTestDraft = createDefaultEmailTestDraft();
   state.openAiModelDraft = state.appSettings.openAiModel;
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
   state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
@@ -4254,6 +4527,10 @@ async function refreshWidgetAvailabilityImpl(options = {}) {
   }
 
   const selectedDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate);
+  if (selectedDate && !selectedDate.canBook) {
+    state.widget.selectedTime = "";
+    state.widget.modal = null;
+  }
   if (selectedDate && !selectedDate.slots.some((slot) => slot.time === state.widget.selectedTime && slot.available)) {
     state.widget.selectedTime = "";
     if (state.widget.modal === "details") {
@@ -4511,6 +4788,10 @@ function canAccessBookingReports() {
   return isAdminSession() || isManagerSession();
 }
 
+function canManageBookingClosures() {
+  return isAdminSession() || isManagerSession();
+}
+
 function isScopedSettingsSession() {
   return location.pathname === "/settings" && (isManagerSession() || isStaffSession());
 }
@@ -4710,6 +4991,35 @@ function createDefaultAppSettings() {
     openAiReasoningEffort: "",
     widgetEditorMaxOutputTokens: 25_000,
     widgetEditorUploadLimitBytes: 2_500_000,
+    emailSettings: createDefaultEmailSettingsSummary(),
+  };
+}
+
+function createDefaultEmailSettingsSummary() {
+  return {
+    configured: false,
+    host: "",
+    port: "",
+    secure: true,
+    user: "",
+    fromAddress: "",
+    missingEnvVars: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"],
+  };
+}
+
+function createDefaultEmailTestDraft() {
+  return {
+    recipientEmail: "",
+    firstName: "Jordan",
+    lastName: "Taylor",
+    guestEmail: "jordan.taylor@example.com",
+    phone: "+61 400 123 456",
+    companyName: "Pete N Joel",
+    establishmentName: "Main Dining Room",
+    bookingDate: todayString(),
+    bookingTime: "19:00",
+    partySize: "4",
+    notes: "Window table if available. Celebrating a birthday.",
   };
 }
 
@@ -5488,6 +5798,16 @@ function getCalendarDayPresentation(availability) {
       rawSeatLoad: 0,
       seatLoad: 0,
       status: "unavailable",
+    };
+  }
+
+  if (availability.isBlocked) {
+    return {
+      caption: "Bookings closed",
+      className: "is-closed status-closed",
+      rawSeatLoad: 1,
+      seatLoad: 1,
+      status: "bookings-closed",
     };
   }
 

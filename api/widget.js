@@ -5,6 +5,7 @@ import {
   sanitizeBookingInput,
 } from "../lib/bookings.js";
 import { ensureSchema } from "../lib/db.js";
+import { sendBookingConfirmationForBooking } from "../lib/email.js";
 import { readBody, sendJson } from "../lib/http.js";
 
 export default async function handler(request, response) {
@@ -53,14 +54,40 @@ export default async function handler(request, response) {
       return;
     }
 
+    const emailResult = await trySendBookingConfirmation(result.bookingId);
     sendJson(response, 201, {
-      message: "Booking confirmed.",
+      message: emailResult.message,
       bookingDate: result.bookingDate,
       bookingTime: result.bookingTime,
       bookingId: result.bookingId,
+      confirmationEmailSent: emailResult.sent,
     });
     return;
   }
 
   sendJson(response, 405, { error: "Method not allowed." });
+}
+
+async function trySendBookingConfirmation(bookingId) {
+  try {
+    const result = await sendBookingConfirmationForBooking(bookingId);
+    if (result.sent) {
+      return {
+        sent: true,
+        message: "Booking confirmed. A confirmation email has been sent.",
+      };
+    }
+
+    console.warn("Booking confirmation email skipped", {
+      bookingId,
+      reason: result.reason ?? "Unknown reason.",
+    });
+  } catch (error) {
+    console.error("Booking confirmation email failed", error);
+  }
+
+  return {
+    sent: false,
+    message: "Booking confirmed. The confirmation email could not be sent.",
+  };
 }

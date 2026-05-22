@@ -1,5 +1,6 @@
 import {
   createBooking,
+  clearSeatCountClosedDate,
   deleteBooking,
   getBooking,
   getSeatCountContext,
@@ -7,9 +8,11 @@ import {
   listSeatCountAvailability,
   searchBookingsForSeatCount,
   sanitizeBookingInput,
+  setSeatCountClosedDate,
   updateBooking,
 } from "../lib/bookings.js";
 import { ensureSchema } from "../lib/db.js";
+import { sendBookingConfirmationForBooking } from "../lib/email.js";
 import { readBody, sendJson } from "../lib/http.js";
 import { getSessionUserFromCookieHeader } from "../lib/users.js";
 
@@ -164,7 +167,12 @@ export default async function handler(request, response) {
           return;
         }
 
-        sendJson(response, 201, { message: "Booking created.", bookingId: result.bookingId });
+        const emailResult = await trySendBookingConfirmation(result.bookingId);
+        sendJson(response, 201, {
+          message: emailResult.message,
+          bookingId: result.bookingId,
+          confirmationEmailSent: emailResult.sent,
+        });
         return;
       }
 
@@ -229,6 +237,62 @@ export default async function handler(request, response) {
         return;
       }
 
+      if (action === "closeDate") {
+        if (!["admin", "manager"].includes(session?.authLevel)) {
+          sendJson(response, 403, { error: "Only admins and managers can stop bookings for a day." });
+          return;
+        }
+
+        const seatCount = await getSeatCountContext(body.seatCountId);
+        const bookingDate = String(body.bookingDate ?? "").trim();
+        if (!seatCount || !bookingDate) {
+          sendJson(response, 400, { error: "Seat count and booking date are required." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
+        const result = await setSeatCountClosedDate(body.seatCountId, bookingDate);
+        if (result.error) {
+          sendJson(response, 400, { error: result.error });
+          return;
+        }
+
+        sendJson(response, 200, { message: "No more bookings will be accepted for that day." });
+        return;
+      }
+
+      if (action === "reopenDate") {
+        if (!["admin", "manager"].includes(session?.authLevel)) {
+          sendJson(response, 403, { error: "Only admins and managers can reopen a closed booking day." });
+          return;
+        }
+
+        const seatCount = await getSeatCountContext(body.seatCountId);
+        const bookingDate = String(body.bookingDate ?? "").trim();
+        if (!seatCount || !bookingDate) {
+          sendJson(response, 400, { error: "Seat count and booking date are required." });
+          return;
+        }
+
+        if (!canAccessEstablishment(session, seatCount.establishmentId)) {
+          sendJson(response, 403, { error: "That booking calendar is outside your establishment access." });
+          return;
+        }
+
+        const result = await clearSeatCountClosedDate(body.seatCountId, bookingDate);
+        if (result.error) {
+          sendJson(response, 400, { error: result.error });
+          return;
+        }
+
+        sendJson(response, 200, { message: "Bookings have been reopened for that day." });
+        return;
+      }
+
       sendJson(response, 400, { error: "Unknown action." });
       return;
     }
@@ -248,4 +312,28 @@ function canAccessEstablishment(session, establishmentId) {
   }
 
   return Boolean(session?.establishmentId && establishmentId && session.establishmentId === establishmentId);
+}
+
+async function trySendBookingConfirmation(bookingId) {
+  try {
+    const result = await sendBookingConfirmationForBooking(bookingId);
+    if (result.sent) {
+      return {
+        sent: true,
+        message: "Booking created. A confirmation email has been sent.",
+      };
+    }
+
+    console.warn("Admin booking confirmation email skipped", {
+      bookingId,
+      reason: result.reason ?? "Unknown reason.",
+    });
+  } catch (error) {
+    console.error("Admin booking confirmation email failed", error);
+  }
+
+  return {
+    sent: false,
+    message: "Booking created. The confirmation email could not be sent.",
+  };
 }
