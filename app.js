@@ -121,8 +121,8 @@ window.addEventListener("popstate", () => {
   redirectSignedInUserFromLogin();
   syncAuthRouteState();
 
-  if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
-    loadWidgetCatalog().catch(() => {
+  if (isPublicBookingRoute() && (!getSeatCountById(getSeatCountIdFromLocation()) || !state.widgetCatalog.length)) {
+    loadPublicWidgetCatalog().catch(() => {
       setStatus("widget", "error", "Widget data could not be loaded.");
     });
   }
@@ -520,50 +520,51 @@ async function boot() {
   render();
 
   try {
-    const sessionResult = await Promise.allSettled([loadSession()]);
-    if (sessionResult[0]?.status === "rejected") {
-      setStatus("auth", "error", "Session could not be loaded.");
-    }
-
-    redirectSignedInUserFromLogin();
-    syncAuthRouteState();
-
     if (isPublicBookingRoute()) {
-      const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
+      const widgetResult = await Promise.allSettled([loadPublicWidgetCatalog()]);
       if (widgetResult[0]?.status === "rejected") {
         setStatus("widget", "error", "Widget data could not be loaded.");
       }
-    }
-
-    if (
-      location.pathname === "/settings" &&
-      hasSettingsAccess()
-    ) {
-      beginScopedWorkspaceLoad();
-      const adminResult = await Promise.allSettled([loadAdminData()]);
-      if (adminResult[0]?.status === "rejected") {
-        setStatus("workspace", "error", "Your establishment workspace could not be loaded.");
-        setStatus("auth", "error", "Admin data could not be loaded.");
-      } else {
-        clearStatus("workspace");
+      syncWidgetFromLocation();
+    } else {
+      const sessionResult = await Promise.allSettled([loadSession()]);
+      if (sessionResult[0]?.status === "rejected") {
+        setStatus("auth", "error", "Session could not be loaded.");
       }
-    }
 
-    if (
-      (location.pathname === "/widget-setup" ||
-        location.pathname === "/widget-editor" ||
-        location.pathname === "/page-view-editor") &&
-      isAdminSession()
-    ) {
-      const adminResult = await Promise.allSettled([loadAdminData()]);
-      if (adminResult[0]?.status === "rejected") {
-        setStatus("auth", "error", "Admin data could not be loaded.");
+      redirectSignedInUserFromLogin();
+      syncAuthRouteState();
+
+      if (
+        location.pathname === "/settings" &&
+        hasSettingsAccess()
+      ) {
+        beginScopedWorkspaceLoad();
+        const adminResult = await Promise.allSettled([loadAdminData()]);
+        if (adminResult[0]?.status === "rejected") {
+          setStatus("workspace", "error", "Your establishment workspace could not be loaded.");
+          setStatus("auth", "error", "Admin data could not be loaded.");
+        } else {
+          clearStatus("workspace");
+        }
       }
-    }
 
-    syncWidgetFromLocation();
-    if (hasSettingsAccess()) {
-      await refreshAdminAvailability();
+      if (
+        (location.pathname === "/widget-setup" ||
+          location.pathname === "/widget-editor" ||
+          location.pathname === "/page-view-editor") &&
+        isAdminSession()
+      ) {
+        const adminResult = await Promise.allSettled([loadAdminData()]);
+        if (adminResult[0]?.status === "rejected") {
+          setStatus("auth", "error", "Admin data could not be loaded.");
+        }
+      }
+
+      syncWidgetFromLocation();
+      if (hasSettingsAccess()) {
+        await refreshAdminAvailability();
+      }
     }
   } finally {
     state.booting = false;
@@ -628,14 +629,31 @@ async function loadWidgetCatalog() {
   syncWidgetSetupSelections();
 }
 
+async function loadPublicWidgetCatalog() {
+  const seatCountId = getSeatCountIdFromLocation();
+  if (!seatCountId) {
+    state.widgetCatalog = [];
+    return;
+  }
+
+  const response = await fetch(`/api/widget?action=config&seatCountId=${encodeURIComponent(seatCountId)}`);
+  const payload = await readApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Widget configuration failed.");
+  }
+
+  state.widgetCatalog = payload.catalog ?? [];
+}
+
 function navigate(target, options = {}) {
   const replace = options.replace === true;
   const historyMethod = replace ? "replaceState" : "pushState";
   history[historyMethod]({}, "", target);
   redirectSignedInUserFromLogin();
   syncAuthRouteState();
-  if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
-    loadWidgetCatalog()
+  if (isPublicBookingRoute() && (!getSeatCountById(getSeatCountIdFromLocation()) || !state.widgetCatalog.length)) {
+    loadPublicWidgetCatalog()
       .then(() => {
         syncWidgetFromLocation();
         render();
@@ -1347,19 +1365,13 @@ function renderWidgetSetupPage() {
   const establishments = getWidgetSetupEstablishments();
   const seatCounts = getWidgetSetupSeatCounts();
   const widgetUrl = getWidgetUrl();
+  const pageViewUrl = getPageViewUrl();
   const widgetOrigin = widgetUrl ? new URL(widgetUrl).origin : "";
-  const iframeSnippet = `<iframe
-  src="${widgetUrl}"
-  data-booking-widget
-  style="width:100%;height:640px;border:0;display:block;overflow:hidden"
-  loading="lazy"
-  scrolling="no"
-></iframe>
-<script>
+  const iframeResizeScript = `<script>
   (function () {
     var widgetOrigin = ${JSON.stringify(widgetOrigin)};
 
-    function resizeBookingWidget(event) {
+    function resizeBookingEmbed(event) {
       if (widgetOrigin && event.origin !== widgetOrigin) {
         return;
       }
@@ -1368,7 +1380,7 @@ function renderWidgetSetupPage() {
         return;
       }
 
-      var frames = document.querySelectorAll("iframe[data-booking-widget]");
+      var frames = document.querySelectorAll("iframe[data-booking-widget], iframe[data-booking-page-view]");
       for (var i = 0; i < frames.length; i += 1) {
         var frame = frames[i];
         if (frame.contentWindow === event.source) {
@@ -1377,9 +1389,25 @@ function renderWidgetSetupPage() {
       }
     }
 
-    window.addEventListener("message", resizeBookingWidget);
+    window.addEventListener("message", resizeBookingEmbed);
   })();
 </script>`;
+  const iframeSnippet = `<iframe
+  src="${widgetUrl}"
+  data-booking-widget
+  style="width:100%;height:640px;border:0;display:block;overflow:hidden"
+  loading="eager"
+  scrolling="no"
+></iframe>
+${iframeResizeScript}`;
+  const pageViewIframeSnippet = `<iframe
+  src="${pageViewUrl}"
+  data-booking-page-view
+  style="width:100%;height:960px;border:0;display:block;overflow:hidden"
+  loading="eager"
+  scrolling="no"
+></iframe>
+${iframeResizeScript}`;
 
   return `
     <section class="layout">
@@ -1463,7 +1491,7 @@ function renderWidgetSetupPage() {
         id: "widget-setup-share",
         eyebrow: "Share",
         title: "Widget URL and embed code",
-        meta: "Copy the direct URL for testing or the iframe snippet for the external website.",
+        meta: "Copy the direct URLs for testing or the iframe snippets for the external website.",
         open: true,
         content: `
           <div class="section-content-grid">
@@ -1480,6 +1508,21 @@ function renderWidgetSetupPage() {
               <div class="copy-row">
                 <textarea readonly rows="6">${escapeHtml(iframeSnippet)}</textarea>
                 <button type="button" class="ghost-button" data-action="copyWidgetEmbed" data-url="${escapeHtml(iframeSnippet)}">Copy embed</button>
+              </div>
+            </div>
+            <div class="inner-panel">
+              <label>Page view URL</label>
+              <div class="copy-row">
+                <input readonly value="${escapeHtml(pageViewUrl)}" />
+                <button type="button" class="ghost-button" data-action="copyPageViewUrl" data-url="${escapeHtml(pageViewUrl)}">Copy URL</button>
+                <button type="button" class="ghost-button" data-action="openPageViewPreview" data-url="${escapeHtml(pageViewUrl)}">Open preview</button>
+              </div>
+            </div>
+            <div class="inner-panel">
+              <label>Page view embed code</label>
+              <div class="copy-row">
+                <textarea readonly rows="6">${escapeHtml(pageViewIframeSnippet)}</textarea>
+                <button type="button" class="ghost-button" data-action="copyPageViewEmbed" data-url="${escapeHtml(pageViewIframeSnippet)}">Copy embed</button>
               </div>
             </div>
           </div>
@@ -3794,13 +3837,18 @@ async function handleAction(action, dataset) {
     return;
   }
 
-  if (action === "copyWidgetUrl" || action === "copyWidgetEmbed") {
+  if (
+    action === "copyWidgetUrl" ||
+    action === "copyWidgetEmbed" ||
+    action === "copyPageViewUrl" ||
+    action === "copyPageViewEmbed"
+  ) {
     await navigator.clipboard.writeText(dataset.url);
     setStatus("widgetSetup", "success", "Copied.");
     return;
   }
 
-  if (action === "openWidgetPreview") {
+  if (action === "openWidgetPreview" || action === "openPageViewPreview") {
     navigate(dataset.url);
     return;
   }
@@ -4994,7 +5042,7 @@ function syncLiveRefresh() {
 }
 
 function scheduleWidgetHeightSync() {
-  if (location.pathname !== "/widget") {
+  if (!isPublicBookingRoute()) {
     return;
   }
 
@@ -5009,11 +5057,14 @@ function scheduleWidgetHeightSync() {
 }
 
 function postWidgetHeightToParent() {
-  if (location.pathname !== "/widget" || window.parent === window) {
+  if (!isPublicBookingRoute() || window.parent === window) {
     return;
   }
 
-  const root = document.querySelector(".widget-theme-root") ?? document.querySelector("#app");
+  const root =
+    document.querySelector(".widget-theme-root") ??
+    document.querySelector(".page-view-theme-root") ??
+    document.querySelector("#app");
   const modalBackdrop = document.querySelector(".widget-modal-backdrop");
   const rootStyles = root ? window.getComputedStyle(root) : null;
   const rootMargins = rootStyles
@@ -5890,8 +5941,7 @@ function formatSavedPromptUpdatedAt(value) {
 }
 
 function syncWidgetFromLocation() {
-  const params = new URLSearchParams(location.search);
-  const seatCountId = params.get("seatCountId") ?? "";
+  const seatCountId = getSeatCountIdFromLocation();
 
   if (!isPublicBookingRoute()) {
     return;
@@ -5912,6 +5962,10 @@ function syncWidgetFromLocation() {
   state.widget.selectedDate = "";
   state.widget.selectedTime = "";
   state.widget.modal = null;
+}
+
+function getSeatCountIdFromLocation() {
+  return new URLSearchParams(location.search).get("seatCountId") ?? "";
 }
 
 function getWidgetPreviewCssOverride() {
@@ -5936,6 +5990,11 @@ function getWidgetSetupSeatCounts() {
 function getWidgetUrl() {
   const origin = location.origin;
   return `${origin}/widget?seatCountId=${encodeURIComponent(state.widgetSetup.seatCountId)}`;
+}
+
+function getPageViewUrl() {
+  const origin = location.origin;
+  return `${origin}/page-view?seatCountId=${encodeURIComponent(state.widgetSetup.seatCountId)}`;
 }
 
 function getSelectedSeatCountLabel() {

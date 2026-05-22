@@ -8,7 +8,7 @@
       (function () {
         var path = window.location.pathname;
         var root = document.documentElement;
-        if (path === "/widget") {
+        if (path === "/widget" || path === "/page-view") {
           root.classList.add("route-widget");
         }
         if (path === "/login" || path === "/") {

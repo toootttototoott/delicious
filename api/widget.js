@@ -1,5 +1,6 @@
 import {
   createBooking,
+  getPublicWidgetCatalogForSeatCount,
   listSeatCountAvailability,
   listWidgetCatalog,
   sanitizeBookingInput,
@@ -16,6 +17,18 @@ export default async function handler(request, response) {
     const action = url.searchParams.get("action") ?? "config";
 
     if (action === "config") {
+      const requestedSeatCountId = url.searchParams.get("seatCountId");
+      if (requestedSeatCountId) {
+        const config = await getPublicWidgetCatalogForSeatCount(requestedSeatCountId);
+        if (config.error) {
+          sendJson(response, 400, { error: config.error });
+          return;
+        }
+
+        sendJson(response, 200, config);
+        return;
+      }
+
       const catalog = await listWidgetCatalog();
       sendJson(response, 200, { catalog });
       return;
