@@ -364,6 +364,11 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-widget-editor-use-saved-baseline]")) {
     state.widgetEditor.useSavedBaseline = event.target.checked;
     persistThemeEditorSavedBaselineChoice(getActiveThemeEditorKey(), event.target.checked);
+    return;
+  }
+
+  if (event.target.matches("[data-widget-party-size]")) {
+    clampWidgetPartySizeInput(event.target);
   }
 });
 
@@ -3550,6 +3555,8 @@ function renderWidgetModal(activeDate) {
                   type="number"
                   min="1"
                   max="${maxBookablePartySize}"
+                  data-widget-party-size
+                  data-max-bookable-party-size="${maxBookablePartySize}"
                   value="1"
                   required
                 />
@@ -6441,6 +6448,20 @@ function formatSeatCountLabel(seatCount) {
   const visitDurationLabel = formatVisitDuration(seatCount?.guestVisitMinutes);
   const maxPartySize = Math.max(Number(seatCount?.maxPartySize ?? capacity), 0);
   return `${capacity} max guests | ${visitDurationLabel} visits | ${maxPartySize} online`;
+}
+
+function clampWidgetPartySizeInput(target) {
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const maxBookablePartySize = Math.max(Number(target.dataset.maxBookablePartySize ?? target.max ?? 1) || 1, 1);
+  const rawValue = Number(target.value);
+  if (!Number.isFinite(rawValue)) {
+    return;
+  }
+
+  target.value = String(Math.min(Math.max(Math.trunc(rawValue), 1), maxBookablePartySize));
 }
 
 function formatVisitDuration(minutes) {
