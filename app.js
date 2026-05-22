@@ -3525,7 +3525,7 @@ function renderWidgetModal(activeDate) {
           <p class="eyebrow">Choose a time</p>
           <h3>${escapeHtml(state.widget.selectedDate)}</h3>
           ${
-            maxPartySize > 0 && selectedSeatCount?.companyEnquiryEmail
+            maxPartySize > 0
               ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
               : ""
           }
@@ -3576,7 +3576,7 @@ function renderWidgetModal(activeDate) {
                   required
                 />
                 ${
-                  maxPartySize > 0 && selectedSeatCount?.companyEnquiryEmail
+                  maxPartySize > 0
                     ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
                     : ""
                 }
