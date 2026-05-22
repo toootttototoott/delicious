@@ -2,13 +2,13 @@ import { ensureSchema } from "../lib/db.js";
 import { readBody, sendJson } from "../lib/http.js";
 import {
   buildBootstrapCookie,
-  bulkDeleteUsers,
+  bulkDeleteUsersForSession,
   countUsers,
   createUser,
-  deleteUser,
+  deleteUserForSession,
   getSessionUserFromCookieHeader,
   sanitizeUserInput,
-  updateUser,
+  updateUserForSession,
 } from "../lib/users.js";
 
 export default async function handler(request, response) {
@@ -85,19 +85,33 @@ export default async function handler(request, response) {
   }
 
   if (action === "update") {
-    if (isManager) {
-      sendJson(response, 403, { error: "Managers can only create staff accounts." });
+    const managerBody = isManager
+      ? {
+          ...body,
+          authLevel: "staff",
+          companyId: session?.companyId ?? "",
+          establishmentId: session?.establishmentId ?? "",
+        }
+      : body;
+    if (isManager && !session?.establishmentId) {
+      sendJson(response, 403, { error: "Manager account must be assigned to an establishment first." });
       return;
     }
 
-    const input = await sanitizeUserInput(body, { passwordRequired: false });
+    const input = await sanitizeUserInput(managerBody, { passwordRequired: false });
     if (input.error) {
       sendJson(response, 400, { error: input.error });
       return;
     }
 
     try {
-      const user = await updateUser(body.userId, input);
+      const result = await updateUserForSession(session, body.userId, input);
+      if (result.error) {
+        sendJson(response, result.forbidden ? 403 : result.notFound ? 404 : 400, { error: result.error });
+        return;
+      }
+
+      const user = result.user;
       sendJson(response, 200, { message: "User updated.", user });
     } catch (error) {
       if (error.code === "23505") {
@@ -112,14 +126,9 @@ export default async function handler(request, response) {
   }
 
   if (action === "delete") {
-    if (isManager) {
-      sendJson(response, 403, { error: "Managers can only create staff accounts." });
-      return;
-    }
-
-    const result = await deleteUser(body.userId, session?.id);
+    const result = await deleteUserForSession(session, body.userId);
     if (result.error) {
-      sendJson(response, 400, { error: result.error });
+      sendJson(response, result.forbidden ? 403 : result.notFound ? 404 : 400, { error: result.error });
       return;
     }
 
@@ -128,14 +137,9 @@ export default async function handler(request, response) {
   }
 
   if (action === "bulkDelete") {
-    if (isManager) {
-      sendJson(response, 403, { error: "Managers can only create staff accounts." });
-      return;
-    }
-
-    const result = await bulkDeleteUsers(body.userIds ?? [], session?.id);
+    const result = await bulkDeleteUsersForSession(session, body.userIds ?? []);
     if (result.error) {
-      sendJson(response, 400, { error: result.error });
+      sendJson(response, result.forbidden ? 403 : result.notFound ? 404 : 400, { error: result.error });
       return;
     }
 

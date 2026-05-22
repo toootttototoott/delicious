@@ -20,6 +20,7 @@ const state = {
     createDefaultAppSettings().widgetEditorUploadLimitBytes,
   ),
   emailTestDraft: createDefaultEmailTestDraft(),
+  authForms: createDefaultAuthForms(),
   widgetCatalog: [],
   widgetAvailability: [],
   statuses: {
@@ -32,6 +33,7 @@ const state = {
     openaiSettings: null,
     emailSettings: null,
     widgetEditor: null,
+    passwordReset: null,
   },
   filters: {
     users: "",
@@ -116,6 +118,7 @@ document.addEventListener("click", (event) => {
 
 window.addEventListener("popstate", () => {
   redirectSignedInUserFromLogin();
+  syncAuthRouteState();
 
   if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog().catch(() => {
@@ -187,6 +190,18 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  if (event.target.matches("[data-forgot-password-form]")) {
+    event.preventDefault();
+    await handleForgotPasswordSubmit(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-reset-password-form]")) {
+    event.preventDefault();
+    await handleResetPasswordSubmit(event.target);
+    return;
+  }
+
   if (event.target.matches("[data-user-form]")) {
     event.preventDefault();
     await handleUserSubmit(event.target);
@@ -249,6 +264,31 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-company-search]")) {
     state.filters.companies = event.target.value;
     render();
+    return;
+  }
+
+  if (event.target.matches("[data-login-email-draft]")) {
+    state.authForms.loginEmail = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-login-password-draft]")) {
+    state.authForms.loginPassword = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-forgot-email-draft]")) {
+    state.authForms.forgotEmail = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-reset-password-draft]")) {
+    state.authForms.resetPassword = event.target.value;
+    return;
+  }
+
+  if (event.target.matches("[data-reset-confirm-password-draft]")) {
+    state.authForms.resetConfirmPassword = event.target.value;
     return;
   }
 
@@ -482,6 +522,7 @@ async function boot() {
     }
 
     redirectSignedInUserFromLogin();
+    syncAuthRouteState();
 
     if (isPublicBookingRoute()) {
       const widgetResult = await Promise.allSettled([loadWidgetCatalog()]);
@@ -582,6 +623,7 @@ async function loadWidgetCatalog() {
 function navigate(target) {
   history.pushState({}, "", target);
   redirectSignedInUserFromLogin();
+  syncAuthRouteState();
   if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
     loadWidgetCatalog()
       .then(() => {
@@ -826,6 +868,14 @@ function renderPublicBookingLoadingPage() {
 }
 
 function renderLoginPage() {
+  if (hasPasswordResetToken()) {
+    return renderResetPasswordPage();
+  }
+
+  if (isForgotPasswordView()) {
+    return renderForgotPasswordPage();
+  }
+
   return `
     <section class="login-layout">
       <article class="panel login-panel login-main-panel">
@@ -836,15 +886,36 @@ function renderLoginPage() {
           <div class="form-grid">
             <div class="field full">
               <label for="login-email">Email</label>
-              <input id="login-email" name="email" type="email" autocomplete="username" autofocus required />
+              <input
+                id="login-email"
+                name="email"
+                type="email"
+                autocomplete="username"
+                value="${escapeHtml(state.authForms.loginEmail)}"
+                data-login-email-draft
+                autofocus
+                required
+              />
             </div>
             <div class="field full">
               <label for="login-password">Password</label>
-              <input id="login-password" name="password" type="password" autocomplete="current-password" enterkeyhint="go" required />
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                value="${escapeHtml(state.authForms.loginPassword)}"
+                data-login-password-draft
+                enterkeyhint="go"
+                required
+              />
             </div>
           </div>
           ${renderStatus("auth")}
-          <button type="submit" class="login-submit">Sign in</button>
+          <div class="stack-inline">
+            <button type="submit" class="login-submit">Sign in</button>
+            <button type="button" class="ghost-button" data-action="openForgotPassword">Forgot password</button>
+          </div>
         </form>
       </article>
       <article class="panel login-side">
@@ -862,6 +933,117 @@ function renderLoginPage() {
               </div>
             `
         }
+      </article>
+    </section>
+  `;
+}
+
+function renderForgotPasswordPage() {
+  return `
+    <section class="login-layout">
+      <article class="panel login-panel login-main-panel">
+        <p class="eyebrow">Account Access</p>
+        <h2>Forgot password</h2>
+        <p class="meta">Enter your email address and, if it exists in the system, a reset link will be sent.</p>
+        <form class="stack" data-forgot-password-form autocomplete="on">
+          <div class="field full">
+            <label for="forgot-email">Email</label>
+            <input
+              id="forgot-email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              value="${escapeHtml(state.authForms.forgotEmail)}"
+              data-forgot-email-draft
+              autofocus
+              required
+            />
+          </div>
+          ${renderStatus("passwordReset")}
+          <div class="stack-inline">
+            <button type="submit" class="login-submit">Send reset link</button>
+            <button type="button" class="ghost-button" data-action="returnToLogin">Back to sign in</button>
+          </div>
+        </form>
+      </article>
+      <article class="panel login-side">
+        <p class="eyebrow">Recovery</p>
+        <h3>How it works</h3>
+        <div class="stack">
+          <p class="meta">1. Submit the email tied to your user account.</p>
+          <p class="meta">2. Open the reset link from your inbox.</p>
+          <p class="meta">3. Choose a new password and sign back in.</p>
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderResetPasswordPage() {
+  const tokenStatus = state.authForms.resetTokenStatus;
+  const tokenInvalid = tokenStatus === "invalid";
+  const tokenChecking = tokenStatus === "idle" || tokenStatus === "loading";
+
+  return `
+    <section class="login-layout">
+      <article class="panel login-panel login-main-panel">
+        <p class="eyebrow">Account Access</p>
+        <h2>Reset password</h2>
+        <p class="meta">Choose a new password for your account.</p>
+        ${tokenChecking ? '<div class="status info">Checking reset link...</div>' : ""}
+        ${
+          tokenInvalid
+            ? `<div class="status error">${escapeHtml(state.authForms.resetTokenError || "This password reset link is invalid or has expired.")}</div>`
+            : ""
+        }
+        <form class="stack" data-reset-password-form autocomplete="on">
+          <div class="field full">
+            <label for="reset-password">New password</label>
+            <input
+              id="reset-password"
+              name="password"
+              type="password"
+              minlength="8"
+              autocomplete="new-password"
+              value="${escapeHtml(state.authForms.resetPassword)}"
+              data-reset-password-draft
+              autofocus
+              required
+              ${tokenInvalid || tokenChecking ? "disabled" : ""}
+            />
+          </div>
+          <div class="field full">
+            <label for="reset-confirm-password">Confirm new password</label>
+            <input
+              id="reset-confirm-password"
+              name="confirmPassword"
+              type="password"
+              minlength="8"
+              autocomplete="new-password"
+              value="${escapeHtml(state.authForms.resetConfirmPassword)}"
+              data-reset-confirm-password-draft
+              required
+              ${tokenInvalid || tokenChecking ? "disabled" : ""}
+            />
+          </div>
+          ${renderStatus("passwordReset")}
+          <div class="stack-inline">
+            <button type="submit" class="login-submit" ${tokenInvalid || tokenChecking ? "disabled" : ""}>Save new password</button>
+            <button type="button" class="ghost-button" data-action="returnToLogin">Back to sign in</button>
+          </div>
+        </form>
+      </article>
+      <article class="panel login-side">
+        <p class="eyebrow">Security</p>
+        <h3>${tokenInvalid ? "Need a new link?" : "Reset link active"}</h3>
+        <div class="stack">
+          <p class="meta">${
+            tokenInvalid
+              ? "Request another password reset link from the sign-in page."
+              : "Use a password with at least 8 characters. Once saved, this reset link cannot be reused."
+          }</p>
+          <button type="button" class="ghost-button" data-action="openForgotPassword">Request another reset link</button>
+        </div>
       </article>
     </section>
   `;
@@ -1102,8 +1284,12 @@ function renderScopedSettingsPage() {
                 <div class="two-column-layout">
                   <div class="inner-panel">
                     <p class="eyebrow">Create</p>
-                    <h3>Create staff member</h3>
-                    <p class="meta">New accounts created here are always assigned to this establishment.</p>
+                    <h3>${state.userForm.mode === "edit" ? "Edit staff member" : "Create staff member"}</h3>
+                    <p class="meta">${
+                      state.userForm.mode === "edit"
+                        ? "Managers can update staff details and set a new password when needed."
+                        : "New accounts created here are always assigned to this establishment."
+                    }</p>
                     ${renderUserForm(false, {
                       restrictToStaff: true,
                       hideAssignmentFields: true,
@@ -1114,7 +1300,28 @@ function renderScopedSettingsPage() {
                   <div class="inner-panel">
                     <p class="eyebrow">Current staff</p>
                     <h3>Assigned to this establishment</h3>
-                    <p class="meta">Managers can view the staff accounts linked to this location.</p>
+                    <p class="meta">Managers can create, edit, delete, and reset passwords for staff linked to this location.</p>
+                    <div class="list-toolbar">
+                      <input
+                        type="search"
+                        placeholder="Search staff by name or email"
+                        value="${escapeHtml(state.filters.users)}"
+                        data-user-search
+                      />
+                      <button type="button" class="ghost-button" data-action="bulkDeleteUsers">
+                        Delete selected (${state.selectedUserIds.size})
+                      </button>
+                    </div>
+                    <div class="list-header">
+                      <label class="checkbox">
+                        <input
+                          type="checkbox"
+                          data-user-select-all
+                          ${areAllVisibleSelected("users") ? "checked" : ""}
+                        />
+                        <span>Select visible</span>
+                      </label>
+                    </div>
                     <div class="users">${renderUsers()}</div>
                   </div>
                 </div>
@@ -2340,7 +2547,7 @@ function renderUsers() {
   const companiesById = new Map(state.companies.map((company) => [company.id, company.name]));
   const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment]));
   const users = getFilteredUsers();
-  const canManageUsers = isAdminSession();
+  const canManageUsers = isAdminSession() || isManagerSession();
 
   if (!users.length) {
     return `<div class="empty">${
@@ -2712,6 +2919,7 @@ function renderBookingsPanel() {
                       </div>
                       ${renderBookingSearchResults()}
                     </div>
+                    ${renderBookingDayQuickActions()}
                     <div class="booking-calendar-shell">
                       ${renderAdminCalendarNavigator()}
                       ${renderAdminCalendar()}
@@ -2720,6 +2928,58 @@ function renderBookingsPanel() {
                   </div>
                 `
       }
+    </div>
+  `;
+}
+
+function renderBookingDayQuickActions() {
+  const activeDate =
+    state.adminAvailability.find((item) => item.date === state.adminCalendar.selectedDate) ?? null;
+
+  if (!activeDate) {
+    return `
+      <div class="inner-panel">
+        <p class="eyebrow">Selected day</p>
+        <h3>Choose a date on the calendar</h3>
+        <p class="meta">${
+          canManageBookingClosures()
+            ? "After selecting a day, you can stop any more bookings for that date from here."
+            : "After selecting a day, you can inspect bookings and availability from here."
+        }</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="inner-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">Selected day</p>
+          <h3>${escapeHtml(activeDate.date)}</h3>
+          <p class="meta">${
+            activeDate.isBlocked
+              ? "No more bookings are currently being accepted for this day."
+              : activeDate.isOpen
+              ? `${escapeHtml(formatDisplayTime(activeDate.openTime))} to ${escapeHtml(formatDisplayTime(activeDate.closeTime))}`
+              : "This day is closed based on opening hours."
+          }</p>
+        </div>
+        ${
+          canManageBookingClosures() && (activeDate.isOpen || activeDate.isBlocked)
+            ? `<div class="stack-inline">
+                <button
+                  type="button"
+                  class="${activeDate.isBlocked ? "ghost-button" : ""}"
+                  data-action="${activeDate.isBlocked ? "reopenAdminDate" : "closeAdminDate"}"
+                  data-seat-count-id="${escapeHtml(state.adminCalendar.seatCountId)}"
+                  data-date="${escapeHtml(activeDate.date)}"
+                >
+                  ${activeDate.isBlocked ? "Reopen bookings" : "Stop bookings for this day"}
+                </button>
+              </div>`
+            : ""
+        }
+      </div>
     </div>
   `;
 }
@@ -3286,6 +3546,18 @@ function renderAdminSlot(slot, options = {}) {
 }
 
 async function handleAction(action, dataset) {
+  if (action === "openForgotPassword") {
+    clearStatus("passwordReset");
+    navigate("/login?forgot=1");
+    return;
+  }
+
+  if (action === "returnToLogin") {
+    clearStatus("passwordReset");
+    navigate("/login");
+    return;
+  }
+
   if (action === "logout") {
     setStatus("auth", "info", "Signing out...");
     await logout();
@@ -3826,6 +4098,7 @@ async function handleLogin(form) {
 
     state.session = data.session;
     state.userCount = Math.max(Number(state.userCount ?? 0), 1);
+    state.authForms.loginPassword = "";
     clearStatus("auth");
 
     history.replaceState({}, "", getSignedInLandingPath());
@@ -3845,6 +4118,99 @@ async function handleLogin(form) {
   } catch (error) {
     setInlineFormStatus(form, "error", error.message ?? "Unable to sign in.");
     setSubmitPending(form, false, "Sign in");
+    form.dataset.pending = "false";
+  }
+}
+
+async function handleForgotPasswordSubmit(form) {
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "success", "Sending reset link...");
+  setSubmitPending(form, true, "Sending...");
+
+  try {
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.action = "request";
+    payload.origin = window.location.origin;
+
+    const response = await fetch("/api/password-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await readApiResponse(response);
+
+    if (!response.ok) {
+      setInlineFormStatus(form, "error", data.error ?? "Reset link could not be sent.");
+      setSubmitPending(form, false, "Send reset link");
+      form.dataset.pending = "false";
+      return;
+    }
+
+    state.authForms.forgotEmail = payload.email ?? "";
+    setInlineFormStatus(form, "success", data.message ?? "If that email address exists, a reset link has been sent.");
+    setSubmitPending(form, false, "Send reset link");
+    form.dataset.pending = "false";
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Reset link could not be sent.");
+    setSubmitPending(form, false, "Send reset link");
+    form.dataset.pending = "false";
+  }
+}
+
+async function handleResetPasswordSubmit(form) {
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
+  const password = state.authForms.resetPassword;
+  const confirmPassword = state.authForms.resetConfirmPassword;
+  if (password !== confirmPassword) {
+    setInlineFormStatus(form, "error", "New password and confirm password must match.");
+    return;
+  }
+
+  const token = getPasswordResetTokenFromLocation();
+  if (!token) {
+    setInlineFormStatus(form, "error", "This password reset link is invalid or has expired.");
+    return;
+  }
+
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "success", "Updating password...");
+  setSubmitPending(form, true, "Saving...");
+
+  try {
+    const response = await fetch("/api/password-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "reset",
+        token,
+        password,
+      }),
+    });
+    const data = await readApiResponse(response);
+
+    if (!response.ok) {
+      setInlineFormStatus(form, "error", data.error ?? "Password could not be updated.");
+      setSubmitPending(form, false, "Save new password");
+      form.dataset.pending = "false";
+      return;
+    }
+
+    state.authForms.resetPassword = "";
+    state.authForms.resetConfirmPassword = "";
+    clearPasswordResetTokenState();
+    clearStatus("passwordReset");
+    navigate("/login");
+    setStatus("auth", "success", data.message ?? "Password updated. You can sign in now.");
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Password could not be updated.");
+    setSubmitPending(form, false, "Save new password");
     form.dataset.pending = "false";
   }
 }
@@ -4439,6 +4805,7 @@ async function logout() {
   state.companies = [];
   state.appSettings = createDefaultAppSettings();
   state.emailTestDraft = createDefaultEmailTestDraft();
+  state.authForms = createDefaultAuthForms();
   state.openAiModelDraft = state.appSettings.openAiModel;
   state.openAiReasoningEffortDraft = state.appSettings.openAiReasoningEffort;
   state.widgetEditorMaxOutputTokensDraft = String(state.appSettings.widgetEditorMaxOutputTokens);
@@ -4729,6 +5096,69 @@ async function readApiResponse(response) {
   return { error: text || `Request failed with status ${response.status}.` };
 }
 
+function syncAuthRouteState() {
+  if (!isAuthRoute()) {
+    return;
+  }
+
+  const resetToken = getPasswordResetTokenFromLocation();
+  if (!resetToken) {
+    clearPasswordResetTokenState();
+    if (!isForgotPasswordView()) {
+      clearStatus("passwordReset");
+    }
+    return;
+  }
+
+  if (
+    state.authForms.resetTokenChecked === resetToken &&
+    (state.authForms.resetTokenStatus === "loading" ||
+      state.authForms.resetTokenStatus === "valid" ||
+      state.authForms.resetTokenStatus === "invalid")
+  ) {
+    return;
+  }
+
+  state.authForms.resetTokenChecked = resetToken;
+  state.authForms.resetTokenStatus = "loading";
+  state.authForms.resetTokenError = "";
+  fetch(`/api/password-reset?action=validate&token=${encodeURIComponent(resetToken)}`)
+    .then((response) => readApiResponse(response).then((data) => ({ response, data })))
+    .then(({ response, data }) => {
+      state.authForms.resetTokenStatus = response.ok ? "valid" : "invalid";
+      state.authForms.resetTokenError = response.ok ? "" : data.error ?? "This password reset link is invalid or has expired.";
+      render();
+    })
+    .catch(() => {
+      state.authForms.resetTokenStatus = "invalid";
+      state.authForms.resetTokenError = "This password reset link could not be verified.";
+      render();
+    });
+}
+
+function clearPasswordResetTokenState() {
+  state.authForms.resetTokenChecked = "";
+  state.authForms.resetTokenStatus = "idle";
+  state.authForms.resetTokenError = "";
+}
+
+function isAuthRoute(pathname = location.pathname) {
+  return pathname === "/login" || pathname === "/";
+}
+
+function isForgotPasswordView() {
+  return !hasPasswordResetToken() && new URLSearchParams(location.search).get("forgot") === "1";
+}
+
+function hasPasswordResetToken() {
+  return Boolean(getPasswordResetTokenFromLocation());
+}
+
+function getPasswordResetTokenFromLocation() {
+  const token = new URLSearchParams(location.search).get("resetToken") ?? "";
+  return /^[A-Za-z0-9_-]{20,200}$/.test(token) ? token : "";
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -4995,6 +5425,19 @@ function createDefaultEmailSettingsSummary() {
     user: "",
     fromAddress: "",
     missingEnvVars: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"],
+  };
+}
+
+function createDefaultAuthForms() {
+  return {
+    loginEmail: "",
+    loginPassword: "",
+    forgotEmail: "",
+    resetPassword: "",
+    resetConfirmPassword: "",
+    resetTokenChecked: "",
+    resetTokenStatus: "idle",
+    resetTokenError: "",
   };
 }
 
