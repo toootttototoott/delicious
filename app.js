@@ -3473,9 +3473,9 @@ function renderWidgetModal(activeDate) {
         <div class="widget-modal" data-modal-panel>
           <p class="eyebrow">Booking enquiry</p>
           <h3>Send an enquiry</h3>
-          <p class="meta">${
+            <p class="meta">${
             enquiryLimit > 0
-              ? `For parties over ${enquiryLimit - 1}, send an enquiry and the team will get back to you.`
+              ? `For bookings of more than ${enquiryLimit - 1}, send an enquiry and the team will get back to you.`
               : "Send an enquiry and the team will get back to you."
           }</p>
           <form class="stack widget-form" data-widget-enquiry-form>
@@ -3563,7 +3563,7 @@ function renderWidgetModal(activeDate) {
           <h3>${escapeHtml(state.widget.selectedDate)}</h3>
           ${
             maxPartySize > 0
-              ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
+              ? `<p class="meta">For bookings of more than ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
               : ""
           }
           <div class="times-grid">
@@ -3594,11 +3594,11 @@ function renderWidgetModal(activeDate) {
               ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available`
               : "No seats available"
           }</p>
-          ${
-            maxPartySize > 0
-              ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
-              : ""
-          }
+                ${
+                  maxPartySize > 0
+                    ? `<p class="meta">For bookings of more than ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
+                    : ""
+                }
           <form class="stack widget-form" data-widget-form>
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
             <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
@@ -4655,12 +4655,12 @@ async function handleWidgetBooking(form) {
     if (selectedSeatCount?.companyEnquiryEmail) {
       state.widget.enquiryPartySize = String(requestedSeats);
       state.widget.modal = "enquiry";
-      setStatus("widget", "info", `For parties over ${maxPartySize}, send an enquiry instead.`);
+      setStatus("widget", "info", `For bookings of more than ${maxPartySize}, send an enquiry instead.`);
       render();
       return;
     }
 
-    setStatus("widget", "error", `For parties over ${maxPartySize}, enquire here instead.`);
+    setStatus("widget", "error", `For bookings of more than ${maxPartySize}, enquire here instead.`);
     return;
   }
 
