@@ -724,10 +724,15 @@ function render() {
 
   const app = document.querySelector("#app");
   const topnav = document.querySelector(".topnav");
+  const isLoginRoute = location.pathname === "/login" || location.pathname === "/";
 
   if (state.booting) {
     topnav.innerHTML = "";
-    app.innerHTML = isPublicBookingRoute() ? renderPublicBookingLoadingPage() : renderBootPage();
+    app.innerHTML = isPublicBookingRoute()
+      ? renderPublicBookingLoadingPage()
+      : isLoginRoute
+      ? renderLoginPage()
+      : renderBootPage();
     scheduleWidgetHeightSync();
     return;
   }
