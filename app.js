@@ -25,6 +25,7 @@ const state = {
   widgetAvailability: [],
   statuses: {
     auth: null,
+    workspace: null,
     users: null,
     companies: null,
     bookings: null,
@@ -131,9 +132,12 @@ window.addEventListener("popstate", () => {
     hasSettingsAccess() &&
     !state.companies.length
   ) {
+    beginScopedWorkspaceLoad();
     loadAdminData()
       .then(() => refreshAdminAvailability())
+      .then(() => clearStatus("workspace"))
       .catch(() => {
+        setStatus("workspace", "error", "Your establishment workspace could not be loaded.");
         setStatus("auth", "error", "Admin data could not be loaded.");
       });
   }
@@ -535,9 +539,13 @@ async function boot() {
       location.pathname === "/settings" &&
       hasSettingsAccess()
     ) {
+      beginScopedWorkspaceLoad();
       const adminResult = await Promise.allSettled([loadAdminData()]);
       if (adminResult[0]?.status === "rejected") {
+        setStatus("workspace", "error", "Your establishment workspace could not be loaded.");
         setStatus("auth", "error", "Admin data could not be loaded.");
+      } else {
+        clearStatus("workspace");
       }
     }
 
@@ -642,12 +650,15 @@ function navigate(target, options = {}) {
     hasSettingsAccess() &&
     !state.companies.length
   ) {
+    beginScopedWorkspaceLoad();
     loadAdminData()
       .then(async () => {
         await refreshAdminAvailability();
+        clearStatus("workspace");
         render();
       })
       .catch(() => {
+        setStatus("workspace", "error", "Your establishment workspace could not be loaded.");
         setStatus("auth", "error", "Admin data could not be loaded.");
       });
   }
@@ -1233,6 +1244,8 @@ function renderScopedSettingsPage() {
 
   return `
     <section class="layout">
+      ${renderProminentProcessStatus("workspace")}
+      ${renderProminentProcessStatus("bookings")}
       ${renderSectionPanel({
         id: `${rolePrefix}-overview`,
         eyebrow: "Access",
@@ -1746,6 +1759,14 @@ function renderProminentProcessStatus(scope) {
       </div>
     </article>
   `;
+}
+
+function beginScopedWorkspaceLoad() {
+  if (location.pathname !== "/settings" || !hasSettingsAccess() || !isScopedSettingsSession()) {
+    return;
+  }
+
+  setStatus("workspace", "info", "Loading your establishment workspace...", { processing: true });
 }
 
 function getThemeEditorConfig(key = getActiveThemeEditorKey()) {
@@ -2535,6 +2556,10 @@ function renderUsers() {
   const users = getFilteredUsers();
   const canManageUsers = isAdminSession() || isManagerSession();
 
+  if (isManagerSession() && isStatusProcessing("workspace") && !state.users.length) {
+    return '<div class="empty loading-empty">Loading staff accounts for this establishment...</div>';
+  }
+
   if (!users.length) {
     return `<div class="empty">${
       isManagerSession() ? "No staff accounts are assigned to this establishment yet." : "No users match the current search."
@@ -2882,7 +2907,9 @@ function renderBookingsPanel() {
       </div>
       ${renderStatus("bookings")}
       ${
-        !companies.length
+        restrictedScope && isStatusProcessing("workspace") && !companies.length
+          ? '<div class="empty loading-empty">Loading calendars and booking access for your establishment...</div>'
+          : !companies.length
           ? '<div class="empty">Create a company before managing bookings.</div>'
           : !establishments.length
             ? '<div class="empty">Create an establishment and opening hours first.</div>'
@@ -4331,7 +4358,7 @@ async function searchAdminBookings() {
     return;
   }
 
-  setStatus("bookings", "info", "Searching bookings...");
+  setStatus("bookings", "info", "Searching bookings...", { processing: true });
   const response = await fetch(
     `/api/bookings?action=search&seatCountId=${encodeURIComponent(state.adminCalendar.seatCountId)}&query=${encodeURIComponent(query)}&limit=25`,
   );
@@ -4392,7 +4419,7 @@ async function runBookingReport() {
     params.set("toTime", report.toTime);
   }
 
-  setStatus("bookings", "info", "Running booking report...");
+  setStatus("bookings", "info", "Running booking report...", { processing: true });
   const response = await fetch(`/api/bookings?${params.toString()}`);
   const data = await readApiResponse(response);
 
@@ -4881,7 +4908,7 @@ async function refreshAdminAvailability(options = {}) {
   }
 
   if (!silent) {
-    setStatus("bookings", "info", "Loading booking calendar...");
+    setStatus("bookings", "info", "Loading booking calendar...", { processing: true });
   }
   const monthStart = monthStartDate(state.adminCalendar.currentMonth);
   const days = daysInMonth(state.adminCalendar.currentMonth);
@@ -5484,6 +5511,10 @@ function clearStatus(scope) {
 function renderStatus(scope) {
   const status = state.statuses[scope];
   return `<div class="status ${status?.kind ?? ""}">${escapeHtml(status?.message ?? "")}</div>`;
+}
+
+function isStatusProcessing(scope) {
+  return state.statuses[scope]?.processing === true;
 }
 
 function setInlineFormStatus(form, kind, message) {
