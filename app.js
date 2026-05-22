@@ -620,8 +620,10 @@ async function loadWidgetCatalog() {
   syncWidgetSetupSelections();
 }
 
-function navigate(target) {
-  history.pushState({}, "", target);
+function navigate(target, options = {}) {
+  const replace = options.replace === true;
+  const historyMethod = replace ? "replaceState" : "pushState";
+  history[historyMethod]({}, "", target);
   redirectSignedInUserFromLogin();
   syncAuthRouteState();
   if (isPublicBookingRoute() && !state.widgetCatalog.length && !state.companies.length) {
@@ -917,22 +919,6 @@ function renderLoginPage() {
             <button type="button" class="ghost-button" data-action="openForgotPassword">Forgot password</button>
           </div>
         </form>
-      </article>
-      <article class="panel login-side">
-        <p class="eyebrow">Workflow</p>
-        <h3>${state.session ? "Signed in" : "How it works"}</h3>
-        ${
-          state.session
-            ? renderSessionSummary()
-            : `
-              <div class="stack">
-                <p class="meta">1. Sign in with your assigned account.</p>
-                <p class="meta">2. Use Embed Setup to choose the live booking calendar.</p>
-                <p class="meta">3. Use Theme Editor to update the widget look and save prompts.</p>
-                <p class="meta">4. Use Admin to manage users, companies, establishments, and bookings.</p>
-              </div>
-            `
-        }
       </article>
     </section>
   `;
@@ -4100,21 +4086,7 @@ async function handleLogin(form) {
     state.userCount = Math.max(Number(state.userCount ?? 0), 1);
     state.authForms.loginPassword = "";
     clearStatus("auth");
-
-    history.replaceState({}, "", getSignedInLandingPath());
-
-    if (hasSettingsAccess()) {
-      try {
-        await loadAdminData();
-        await refreshAdminAvailability();
-      } catch {
-        setStatus("auth", "error", "Signed in, but account data could not be refreshed.");
-      }
-    } else {
-      syncWidgetFromLocation();
-    }
-
-    render();
+    navigate(getSignedInLandingPath(), { replace: true });
   } catch (error) {
     setInlineFormStatus(form, "error", error.message ?? "Unable to sign in.");
     setSubmitPending(form, false, "Sign in");
