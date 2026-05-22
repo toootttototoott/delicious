@@ -446,6 +446,7 @@ button[type="submit"],
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
 }
 
 .form-grid-three {
@@ -455,6 +456,7 @@ button[type="submit"],
 .field {
   display: grid;
   gap: 8px;
+  align-content: start;
 }
 
 .field.full {
