@@ -3558,6 +3558,11 @@ function renderWidgetModal(activeDate) {
               ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available`
               : "No seats available"
           }</p>
+          ${
+            maxPartySize > 0
+              ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
+              : ""
+          }
           <form class="stack widget-form" data-widget-form>
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
             <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
@@ -3576,11 +3581,6 @@ function renderWidgetModal(activeDate) {
                   value="1"
                   required
                 />
-                ${
-                  maxPartySize > 0
-                    ? `<p class="meta">For parties over ${escapeHtml(String(maxPartySize))}, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(maxPartySize))}">enquire here</a>.</p>`
-                    : ""
-                }
               </div>
               <div class="field">
                 <label for="booking-first-name">First name</label>
