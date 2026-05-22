@@ -2772,8 +2772,8 @@ function renderEstablishment(company, establishment) {
                         />
                         <span></span>
                       </label>
-                      ${seatCount.seatCount} seats
-                      <button type="button" class="mini-button" data-action="editSeatCount" data-establishment-id="${establishment.id}" data-seat-count-id="${seatCount.id}" data-seat-count="${seatCount.seatCount}">Edit</button>
+                      ${escapeHtml(formatSeatCountLabel(seatCount))}
+                      <button type="button" class="mini-button" data-action="editSeatCount" data-establishment-id="${establishment.id}" data-seat-count-id="${seatCount.id}" data-seat-count="${seatCount.seatCount}" data-guest-visit-minutes="${seatCount.guestVisitMinutes}">Edit</button>
                       <button type="button" class="mini-button" data-action="deleteSeatCount" data-seat-count-id="${seatCount.id}">Delete</button>
                     </span>
                   `,
@@ -2863,7 +2863,7 @@ function renderBookingsPanel() {
                     .map(
                       (seatCount) => `
                         <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
-                          ${escapeHtml(seatCount.seatCount)} seats
+                          ${escapeHtml(formatSeatCountLabel(seatCount))}
                         </option>
                       `,
                     )
@@ -2871,7 +2871,7 @@ function renderBookingsPanel() {
                 </select>
                 ${
                   selectedSeatCount
-                    ? `<p class="meta">Viewing the ${escapeHtml(String(selectedSeatCount.seatCount))}-seat calendar for your establishment.</p>`
+                    ? `<p class="meta">Viewing the ${escapeHtml(formatSeatCountLabel(selectedSeatCount))} calendar for your establishment.</p>`
                     : ""
                 }
               </div>
@@ -2916,7 +2916,7 @@ function renderBookingsPanel() {
                     .map(
                       (seatCount) => `
                         <option value="${seatCount.id}" ${state.adminCalendar.seatCountId === seatCount.id ? "selected" : ""}>
-                          ${escapeHtml(seatCount.seatCount)} seats
+                          ${escapeHtml(formatSeatCountLabel(seatCount))}
                         </option>
                       `,
                     )
@@ -3342,6 +3342,7 @@ function renderAdminCalendar() {
 function renderWidgetModal(activeDate) {
   if (state.widget.modal === "time" && activeDate) {
     const slotCapacity = Math.max(Number(activeDate.slotCapacity ?? 0), 0);
+    const visitDurationLabel = formatVisitDuration(activeDate.guestVisitMinutes);
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
@@ -3349,7 +3350,7 @@ function renderWidgetModal(activeDate) {
           <h3>${escapeHtml(state.widget.selectedDate)}</h3>
           ${
             slotCapacity > 0
-              ? `<p class="meta">Each 15-minute slot can book up to ${escapeHtml(String(slotCapacity))} people. For larger bookings, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+              ? `<p class="meta">Each ${escapeHtml(visitDurationLabel)} booking window can host up to ${escapeHtml(String(slotCapacity))} people. For larger bookings, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
               : ""
           }
           <div class="times-grid">
@@ -3367,6 +3368,7 @@ function renderWidgetModal(activeDate) {
     const selectedSlot = activeDate?.slots.find((slot) => slot.time === state.widget.selectedTime) ?? null;
     const remainingSeats = Math.max(Number(selectedSlot?.remaining ?? 0), 0);
     const slotCapacity = Math.max(Number(selectedSlot?.capacity ?? activeDate?.slotCapacity ?? 0), 0);
+    const visitDurationLabel = formatVisitDuration(activeDate?.guestVisitMinutes);
     return `
       <div class="widget-modal-backdrop" data-action="closeWidgetModal">
         <div class="widget-modal" data-modal-panel>
@@ -3374,8 +3376,8 @@ function renderWidgetModal(activeDate) {
           <h3>${escapeHtml(state.widget.selectedDate)} at ${escapeHtml(formatDisplayTime(state.widget.selectedTime))}</h3>
           <p class="meta">${
             remainingSeats > 0
-              ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available for this time`
-              : "No seats available for this time"
+              ? `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} available during this ${visitDurationLabel} visit window`
+              : `No seats available during this ${visitDurationLabel} visit window`
           }</p>
           <form class="stack widget-form" data-widget-form>
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
@@ -3395,7 +3397,7 @@ function renderWidgetModal(activeDate) {
                 />
                 ${
                   slotCapacity > 0
-                    ? `<p class="meta">For bookings over ${escapeHtml(String(slotCapacity))} people, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
+                    ? `<p class="meta">For bookings over ${escapeHtml(String(slotCapacity))} people in one ${escapeHtml(visitDurationLabel)} visit window, <a href="#" class="inline-link" data-action="openLargePartyEnquiry" data-limit="${escapeHtml(String(slotCapacity))}">enquire here</a>.</p>`
                     : ""
                 }
               </div>
@@ -3496,7 +3498,14 @@ function renderAdminCalendarModal() {
           <div class="admin-slot-list">
             ${
               activeDate.isOpen
-                ? activeDate.slots.map((slot) => renderAdminSlot(slot, { isBlocked: activeDate.isBlocked })).join("")
+                ? activeDate.slots
+                    .map((slot) =>
+                      renderAdminSlot(slot, {
+                        isBlocked: activeDate.isBlocked,
+                        guestVisitMinutes: activeDate.guestVisitMinutes,
+                      }),
+                    )
+                    .join("")
                 : '<div class="empty">This day is closed.</div>'
             }
           </div>
@@ -3560,12 +3569,13 @@ function renderAdminCalendarModal() {
 
 function renderAdminSlot(slot, options = {}) {
   const isBlocked = options.isBlocked === true;
+  const visitDurationLabel = formatVisitDuration(options.guestVisitMinutes);
   return `
     <div class="nested-card">
       <div class="entity-row">
         <div>
           <strong>${escapeHtml(formatDisplayTime(slot.time))}</strong>
-          <p class="meta">${slot.remaining}/${slot.capacity} seats left in this 15-minute slot</p>
+          <p class="meta">${slot.remaining}/${slot.capacity} seats left in this ${escapeHtml(visitDurationLabel)} booking window</p>
         </div>
         <button
           type="button"
@@ -4094,26 +4104,48 @@ async function handleAction(action, dataset) {
   }
 
   if (action === "addSeatCount") {
-    const seatCount = prompt("Seat count");
-    if (!seatCount) {
+    const config = promptForSeatCountConfig();
+    if (!config) {
       return;
     }
 
     setStatus("companies", "info", "Creating seat-count calendar...");
-    await postJson("/api/companies", { action: "createSeatCount", establishmentId: dataset.establishmentId, seatCount }, "companies");
+    await postJson(
+      "/api/companies",
+      {
+        action: "createSeatCount",
+        establishmentId: dataset.establishmentId,
+        seatCount: config.seatCount,
+        guestVisitMinutes: config.guestVisitMinutes,
+      },
+      "companies",
+    );
     await refreshAdminState();
     setStatus("companies", "success", "Seat-count calendar created.");
     return;
   }
 
   if (action === "editSeatCount") {
-    const seatCount = prompt("Seat count", dataset.seatCount);
-    if (!seatCount) {
+    const config = promptForSeatCountConfig({
+      seatCount: dataset.seatCount,
+      guestVisitMinutes: dataset.guestVisitMinutes,
+    });
+    if (!config) {
       return;
     }
 
     setStatus("companies", "info", "Saving seat count...");
-    await postJson("/api/companies", { action: "updateSeatCount", seatCountId: dataset.seatCountId, establishmentId: dataset.establishmentId, seatCount }, "companies");
+    await postJson(
+      "/api/companies",
+      {
+        action: "updateSeatCount",
+        seatCountId: dataset.seatCountId,
+        establishmentId: dataset.establishmentId,
+        seatCount: config.seatCount,
+        guestVisitMinutes: config.guestVisitMinutes,
+      },
+      "companies",
+    );
     await refreshAdminState();
     setStatus("companies", "success", "Seat count updated.");
     return;
@@ -5983,7 +6015,7 @@ function getWidgetSetupSeatCounts() {
   );
   return (establishment?.seatCounts ?? []).map((seatCount) => ({
     ...seatCount,
-    label: `${seatCount.seatCount} seats`,
+    label: formatSeatCountLabel(seatCount),
   }));
 }
 
@@ -6014,7 +6046,7 @@ function getSeatCountById(seatCountId) {
         if (seatCount.id === seatCountId) {
           return {
             ...seatCount,
-            label: `${seatCount.seatCount} seats`,
+            label: formatSeatCountLabel(seatCount),
             companyName: company.name,
             establishmentName: establishment.name,
             establishmentLabel: `${company.name} | ${establishment.name}`,
@@ -6176,6 +6208,48 @@ function getThemeEditorPreviewPayload() {
   } catch {
     return { cssText: "", contentText: "" };
   }
+}
+
+function formatSeatCountLabel(seatCount) {
+  const capacity = Math.max(Number(seatCount?.seatCount ?? 0), 0);
+  const visitDurationLabel = formatVisitDuration(seatCount?.guestVisitMinutes);
+  return `${capacity} max guests | ${visitDurationLabel} visits`;
+}
+
+function formatVisitDuration(minutes) {
+  const totalMinutes = Math.max(Number(minutes) || 0, 0);
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+
+  if (!hours) {
+    return `${totalMinutes} min`;
+  }
+
+  if (!remainingMinutes) {
+    return `${hours} hr${hours === 1 ? "" : "s"}`;
+  }
+
+  return `${hours} hr ${remainingMinutes} min`;
+}
+
+function promptForSeatCountConfig(current = {}) {
+  const seatCount = prompt("Max capacity", String(current.seatCount ?? "40"));
+  if (seatCount === null) {
+    return null;
+  }
+
+  const guestVisitMinutes = prompt(
+    "Guest visit time in minutes (15-minute increments)",
+    String(current.guestVisitMinutes ?? "90"),
+  );
+  if (guestVisitMinutes === null) {
+    return null;
+  }
+
+  return {
+    seatCount: String(seatCount).trim(),
+    guestVisitMinutes: String(guestVisitMinutes).trim(),
+  };
 }
 
 function getAdminSelectedBooking() {
