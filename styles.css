@@ -23,11 +23,14 @@
 body {
   margin: 0;
   min-height: 100vh;
+  line-height: 1.5;
   background:
     radial-gradient(circle at top left, rgba(200, 106, 60, 0.14), transparent 22%),
     radial-gradient(circle at top right, rgba(34, 106, 78, 0.08), transparent 18%),
     linear-gradient(180deg, #f6f1e8, #f0ebe2 54%, #ebe5db);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 html.route-widget body,
@@ -180,6 +183,17 @@ button:hover {
   transform: translateY(-1px);
   border-color: rgba(29, 42, 36, 0.24);
   box-shadow: 0 8px 20px rgba(29, 42, 36, 0.08);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(200, 106, 60, 0.32);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 1px rgba(142, 69, 37, 0.24);
 }
 
 .topnav a.is-active {
@@ -488,6 +502,7 @@ textarea {
   background: var(--panel-strong);
   color: var(--text);
   font: inherit;
+  line-height: 1.45;
 }
 
 textarea {
@@ -582,6 +597,7 @@ input[type="checkbox"] {
 .meta {
   color: var(--muted);
   font-size: 0.94rem;
+  line-height: 1.6;
 }
 
 .users,
@@ -629,6 +645,8 @@ input[type="checkbox"] {
   border-radius: 16px;
   border: 1px solid rgba(29, 42, 36, 0.08);
   background: rgba(255, 255, 255, 0.7);
+  content-visibility: auto;
+  contain-intrinsic-size: 88px;
 }
 
 .search-result-card span {
@@ -660,6 +678,8 @@ input[type="checkbox"] {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.62);
   border: 1px solid rgba(29, 42, 36, 0.08);
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
 }
 
 .company-card,
@@ -852,11 +872,14 @@ input[type="checkbox"] {
 .calendar-number {
   font-size: 1.45rem;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .calendar-caption {
   font-size: 0.88rem;
   color: var(--muted);
+  line-height: 1.35;
+  text-wrap: balance;
 }
 
 .calendar-date.selected,
@@ -1045,6 +1068,8 @@ input[type="checkbox"] {
   gap: 14px;
   padding: 20px;
   border-radius: 18px;
+  content-visibility: auto;
+  contain-intrinsic-size: 320px;
 }
 
 .page-view-section.is-centered,
@@ -1079,6 +1104,7 @@ input[type="checkbox"] {
   height: auto;
   border-radius: 16px;
   object-fit: cover;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .page-view-highlight-grid {
@@ -1163,7 +1189,7 @@ body.widget-embed .widget-calendar-panel {
 
 .widget-modal {
   width: min(760px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 24px;
   border-radius: 24px;
@@ -1184,6 +1210,12 @@ body.widget-embed .widget-calendar-panel {
 
 .report-table-wrap {
   overflow: auto;
+  border: 1px solid rgba(29, 42, 36, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.56);
+  -webkit-overflow-scrolling: touch;
+  content-visibility: auto;
+  contain-intrinsic-size: 320px;
 }
 
 .report-table {
@@ -1292,6 +1324,8 @@ body.widget-embed .widget-calendar-panel {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.62);
   border: 1px solid rgba(29, 42, 36, 0.08);
+  content-visibility: auto;
+  contain-intrinsic-size: 148px;
 }
 
 .saved-prompt-card.is-selected {
@@ -1336,6 +1370,26 @@ body.widget-embed .widget-calendar-panel {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.5);
   color: var(--muted);
+}
+
+button[disabled],
+input[disabled],
+select[disabled],
+textarea[disabled] {
+  cursor: not-allowed;
+  opacity: 0.62;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 800px) {
@@ -1400,5 +1454,50 @@ body.widget-embed .widget-calendar-panel {
   .calendar-cell {
     min-height: 96px;
     padding: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(var(--page-max), calc(100vw - 24px));
+  }
+
+  .panel,
+  .page-hero,
+  .section-summary,
+  .section-body,
+  .widget-modal {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .calendar-weekdays,
+  .calendar-month-grid {
+    gap: 6px;
+  }
+
+  .calendar-cell {
+    min-height: 88px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .calendar-number {
+    font-size: 1.2rem;
+  }
+
+  .calendar-caption {
+    font-size: 0.78rem;
+  }
+
+  .widget-modal-backdrop {
+    padding: 10px;
+  }
+
+  .widget-modal {
+    width: min(760px, calc(100vw - 20px));
+    max-height: calc(100dvh - 20px);
+    padding: 18px;
+    border-radius: 20px;
   }
 }

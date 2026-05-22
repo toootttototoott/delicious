@@ -92,6 +92,19 @@ let adminLiveRefreshHandle = null;
 let widgetRefreshInFlight = false;
 let adminRefreshInFlight = false;
 let widgetHeightSyncHandle = null;
+const derivedAdminDataCache = {
+  companiesRef: null,
+  usersRef: null,
+  allEstablishments: [],
+  companyNamesById: new Map(),
+  establishmentsById: new Map(),
+  usersByCompanyId: new Map(),
+  filteredUsersTerm: null,
+  filteredUsersResult: [],
+  filteredCompaniesTerm: null,
+  filteredCompaniesResult: [],
+  topnavMarkup: null,
+};
 
 document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
@@ -748,6 +761,7 @@ function render() {
 
   if (state.booting) {
     topnav.innerHTML = "";
+    derivedAdminDataCache.topnavMarkup = "";
     app.innerHTML = isPublicBookingRoute()
       ? renderPublicBookingLoadingPage()
       : isLoginRoute
@@ -771,7 +785,11 @@ function render() {
     }
   }
 
-  topnav.innerHTML = renderTopnav();
+  const topnavMarkup = renderTopnav();
+  if (derivedAdminDataCache.topnavMarkup !== topnavMarkup) {
+    topnav.innerHTML = topnavMarkup;
+    derivedAdminDataCache.topnavMarkup = topnavMarkup;
+  }
   app.innerHTML = (routes.get(location.pathname) ?? renderLoginPage)();
   scheduleWidgetHeightSync();
 }
@@ -852,7 +870,7 @@ function renderTopnav() {
 }
 
 function renderTopnavLink(href, label, active) {
-  return `<a href="${href}" class="${active ? "is-active" : ""}" data-link>${label}</a>`;
+  return `<a href="${href}" class="${active ? "is-active" : ""}" ${active ? 'aria-current="page"' : ""} data-link>${label}</a>`;
 }
 
 function renderPageHeader({ eyebrow, title, meta, actions = "" }) {
@@ -1979,6 +1997,18 @@ function renderPageViewLayout(pageContent) {
   `;
 }
 
+function renderPageViewImage(section, options = {}) {
+  const imageUrl = String(section?.imageUrl ?? "").trim();
+  if (!imageUrl) {
+    return "";
+  }
+
+  const loading = options.loading === "eager" ? "eager" : "lazy";
+  const fetchpriority = options.fetchpriority === "high" ? "high" : "low";
+  const altText = section.imageAlt || section.title || "Booking page image";
+  return `<img class="page-view-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}" loading="${loading}" decoding="async" fetchpriority="${fetchpriority}" />`;
+}
+
 function renderPageViewSection(section) {
   if (!section || typeof section !== "object") {
     return "";
@@ -1996,7 +2026,7 @@ function renderPageViewSection(section) {
           section.imageUrl
             ? `
               <div class="page-view-section-media">
-                <img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || section.title || "Booking page image")}" />
+                ${renderPageViewImage(section, { loading: "eager", fetchpriority: "high" })}
               </div>
             `
             : ""
@@ -2022,7 +2052,7 @@ function renderPageViewSection(section) {
           section.imageUrl
             ? `
               <div class="page-view-section-media">
-                <img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || section.title || "Booking page image")}" />
+                ${renderPageViewImage(section)}
               </div>
             `
             : ""
@@ -2062,7 +2092,7 @@ function renderPageViewSection(section) {
       <section class="page-view-section page-view-section-image">
         ${
           section.imageUrl
-            ? `<img class="page-view-image" src="${escapeHtml(section.imageUrl)}" alt="${escapeHtml(section.imageAlt || "Booking page image")}" />`
+            ? renderPageViewImage(section)
             : ""
         }
         ${section.caption ? `<p class="meta page-view-copy">${escapeHtml(section.caption)}</p>` : ""}
@@ -2637,8 +2667,7 @@ function renderCompanyForm() {
 }
 
 function renderUsers() {
-  const companiesById = new Map(state.companies.map((company) => [company.id, company.name]));
-  const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment]));
+  const derivedData = getDerivedAdminData();
   const users = getFilteredUsers();
   const canManageUsers = isAdminSession() || isManagerSession();
 
@@ -2654,9 +2683,9 @@ function renderUsers() {
 
   return users
     .map((user) => {
-      const companyName = user.companyId ? companiesById.get(user.companyId) ?? "Unknown company" : "No company";
+      const companyName = user.companyId ? derivedData.companyNamesById.get(user.companyId) ?? "Unknown company" : "No company";
       const establishment = user.establishmentId
-        ? establishmentsById.get(user.establishmentId)?.name ?? "Unknown establishment"
+        ? derivedData.establishmentsById.get(user.establishmentId)?.name ?? "Unknown establishment"
         : "No establishment";
       return `
         <article class="entity-card">
@@ -2702,6 +2731,7 @@ function renderUsers() {
 }
 
 function renderCompanies() {
+  const derivedData = getDerivedAdminData();
   const companies = getFilteredCompanies();
 
   if (!companies.length) {
@@ -2710,7 +2740,7 @@ function renderCompanies() {
 
   return companies
     .map((company) => {
-      const linkedUsers = state.users.filter((user) => user.companyId === company.id);
+      const linkedUsers = derivedData.usersByCompanyId.get(company.id) ?? [];
       return `
         <article class="company-card">
           <div class="entity-row">
@@ -3004,6 +3034,7 @@ function renderBookingsPanel() {
         <button
           type="button"
           class="${activeTab === "calendar" ? "tab-button is-active" : "tab-button"}"
+          aria-pressed="${activeTab === "calendar" ? "true" : "false"}"
           data-action="showBookingCalendarTab"
         >
           Booking calendar
@@ -3014,6 +3045,7 @@ function renderBookingsPanel() {
               <button
                 type="button"
                 class="${activeTab === "reports" ? "tab-button is-active" : "tab-button"}"
+                aria-pressed="${activeTab === "reports" ? "true" : "false"}"
                 data-action="showBookingReportsTab"
               >
                 Reports
@@ -3351,6 +3383,8 @@ function renderWidgetCalendar() {
         data-action="selectWidgetDate"
         data-date="${date}"
         data-fullness="${presentation.status}"
+        aria-pressed="${isSelected ? "true" : "false"}"
+        aria-label="${escapeHtml(`${date}. ${presentation.caption}`)}"
         style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
         ${availability?.canBook ? "" : "disabled"}
       >
@@ -3397,6 +3431,8 @@ function renderAdminCalendar() {
         data-action="selectAdminDate"
         data-date="${date}"
         data-fullness="${presentation.status}"
+        aria-pressed="${isSelected ? "true" : "false"}"
+        aria-label="${escapeHtml(`${date}. ${presentation.caption}`)}"
         style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
       >
         <span class="calendar-number">${day}</span>
@@ -3632,6 +3668,8 @@ function renderWidgetTimes(activeDate) {
           data-action="selectWidgetTime"
           data-time="${slot.time}"
           data-fullness="${presentation.status}"
+          aria-pressed="${state.widget.selectedTime === slot.time ? "true" : "false"}"
+          aria-label="${escapeHtml(`${formatDisplayTime(slot.time)}. ${presentation.status.replaceAll("-", " ")}`)}"
           style="--seat-load:${presentation.seatLoad.toFixed(3)};--seat-load-raw:${presentation.rawSeatLoad.toFixed(3)}"
           ${slot.available ? "" : "disabled"}
         >
@@ -3736,6 +3774,7 @@ function renderAdminCalendarModal() {
                 <input id="admin-booking-notes" name="notes" value="${escapeHtml(getEditingBookingValue("notes"))}" />
               </div>
             </div>
+            <div class="status" aria-live="polite"></div>
             <div class="stack-inline">
               <button type="submit">${state.adminCalendar.editingBookingId ? "Save booking" : "Create booking"}</button>
               <button type="button" class="ghost-button" data-action="backToAdminDayModal">Back</button>
@@ -4669,18 +4708,33 @@ async function handleWidgetEnquiry(form) {
 }
 
 async function handleAdminBookingSubmit(form) {
+  if (form.dataset.pending === "true") {
+    return;
+  }
+
   const payload = Object.fromEntries(new FormData(form).entries());
   payload.action = payload.bookingId ? "update" : "create";
+  const submitLabel = payload.bookingId ? "Save booking" : "Create booking";
+  const pendingLabel = payload.bookingId ? "Saving booking..." : "Creating booking...";
 
-  setStatus("bookings", "info", payload.bookingId ? "Saving booking..." : "Creating booking...");
-  const data = await postJson("/api/bookings", payload, "bookings");
-  state.adminCalendar.editingBookingId = "";
-  await refreshAdminAvailability();
-  if (state.widget.seatCountId === state.adminCalendar.seatCountId) {
-    await refreshWidgetAvailability();
+  form.dataset.pending = "true";
+  setInlineFormStatus(form, "info", pendingLabel);
+  setSubmitPending(form, true, pendingLabel);
+
+  try {
+    const data = await postJson("/api/bookings", payload, "bookings");
+    state.adminCalendar.editingBookingId = "";
+    await refreshAdminAvailability();
+    if (state.widget.seatCountId === state.adminCalendar.seatCountId) {
+      await refreshWidgetAvailability();
+    }
+    state.adminCalendar.modal = "day";
+    setStatus("bookings", "success", data.message ?? "Booking saved.");
+  } catch (error) {
+    setInlineFormStatus(form, "error", error.message ?? "Booking could not be saved.");
+    setSubmitPending(form, false, submitLabel);
+    form.dataset.pending = "false";
   }
-  state.adminCalendar.modal = "day";
-  setStatus("bookings", "success", data.message ?? "Booking saved.");
 }
 
 async function handleOpenAiSettingsSubmit(form) {
@@ -5879,7 +5933,8 @@ function clearStatus(scope) {
 
 function renderStatus(scope) {
   const status = state.statuses[scope];
-  return `<div class="status ${status?.kind ?? ""}">${escapeHtml(status?.message ?? "")}</div>`;
+  const liveMode = status?.kind === "error" ? "assertive" : "polite";
+  return `<div class="status ${status?.kind ?? ""}" role="status" aria-live="${liveMode}" aria-atomic="true">${escapeHtml(status?.message ?? "")}</div>`;
 }
 
 function isStatusProcessing(scope) {
@@ -5903,46 +5958,64 @@ function setSubmitPending(form, pending, label) {
   }
 
   button.disabled = pending;
+  button.setAttribute("aria-disabled", pending ? "true" : "false");
   button.textContent = label;
+  form.setAttribute("aria-busy", pending ? "true" : "false");
 }
 
 function getFilteredUsers() {
+  const derivedData = getDerivedAdminData();
   const term = state.filters.users.trim().toLowerCase();
-  const companiesById = new Map(state.companies.map((company) => [company.id, company.name.toLowerCase()]));
-  const establishmentsById = new Map(getAllEstablishments().map((establishment) => [establishment.id, establishment.name.toLowerCase()]));
 
   if (!term) {
     return state.users;
   }
 
-  return state.users.filter((user) => {
+  if (derivedData.filteredUsersTerm === term) {
+    return derivedData.filteredUsersResult;
+  }
+
+  const filteredUsers = state.users.filter((user) => {
     const haystack = [
       user.firstName,
       user.lastName,
       user.email,
       user.authLevel,
-      companiesById.get(user.companyId) ?? "",
-      establishmentsById.get(user.establishmentId) ?? "",
+      derivedData.companyNamesById.get(user.companyId)?.toLowerCase() ?? "",
+      derivedData.establishmentsById.get(user.establishmentId)?.name?.toLowerCase() ?? "",
     ]
       .join(" ")
       .toLowerCase();
     return haystack.includes(term);
   });
+
+  derivedData.filteredUsersTerm = term;
+  derivedData.filteredUsersResult = filteredUsers;
+  return filteredUsers;
 }
 
 function getFilteredCompanies() {
+  const derivedData = getDerivedAdminData();
   const term = state.filters.companies.trim().toLowerCase();
   if (!term) {
     return state.companies;
   }
 
-  return state.companies.filter((company) => {
+  if (derivedData.filteredCompaniesTerm === term) {
+    return derivedData.filteredCompaniesResult;
+  }
+
+  const filteredCompanies = state.companies.filter((company) => {
     const seatText = company.establishments
       .flatMap((establishment) => establishment.seatCounts.map((seatCount) => String(seatCount.seatCount)))
       .join(" ");
     const establishmentNames = company.establishments.map((establishment) => establishment.name).join(" ");
     return `${company.name} ${establishmentNames} ${seatText}`.toLowerCase().includes(term);
   });
+
+  derivedData.filteredCompaniesTerm = term;
+  derivedData.filteredCompaniesResult = filteredCompanies;
+  return filteredCompanies;
 }
 
 function setVisibleSelection(scope, checked) {
@@ -5996,16 +6069,11 @@ function pruneSelections() {
 }
 
 function getAllEstablishments() {
-  return state.companies.flatMap((company) =>
-    company.establishments.map((establishment) => ({
-      ...establishment,
-      companyName: company.name,
-    })),
-  );
+  return getDerivedAdminData().allEstablishments;
 }
 
 function getCompanyNameById(companyId) {
-  return state.companies.find((company) => company.id === companyId)?.name ?? "";
+  return getDerivedAdminData().companyNamesById.get(companyId) ?? "";
 }
 
 function getEstablishmentLabel(establishmentId) {
@@ -6013,8 +6081,45 @@ function getEstablishmentLabel(establishmentId) {
     return "";
   }
 
-  const establishment = getAllEstablishments().find((item) => item.id === establishmentId);
+  const establishment = getDerivedAdminData().establishmentsById.get(establishmentId);
   return establishment ? `${establishment.companyName} | ${establishment.name}` : "";
+}
+
+function getDerivedAdminData() {
+  if (
+    derivedAdminDataCache.companiesRef === state.companies &&
+    derivedAdminDataCache.usersRef === state.users
+  ) {
+    return derivedAdminDataCache;
+  }
+
+  const allEstablishments = state.companies.flatMap((company) =>
+    company.establishments.map((establishment) => ({
+      ...establishment,
+      companyName: company.name,
+    })),
+  );
+  const companyNamesById = new Map(state.companies.map((company) => [company.id, company.name]));
+  const establishmentsById = new Map(allEstablishments.map((establishment) => [establishment.id, establishment]));
+  const usersByCompanyId = new Map();
+
+  state.users.forEach((user) => {
+    const companyUsers = usersByCompanyId.get(user.companyId) ?? [];
+    companyUsers.push(user);
+    usersByCompanyId.set(user.companyId, companyUsers);
+  });
+
+  derivedAdminDataCache.companiesRef = state.companies;
+  derivedAdminDataCache.usersRef = state.users;
+  derivedAdminDataCache.allEstablishments = allEstablishments;
+  derivedAdminDataCache.companyNamesById = companyNamesById;
+  derivedAdminDataCache.establishmentsById = establishmentsById;
+  derivedAdminDataCache.usersByCompanyId = usersByCompanyId;
+  derivedAdminDataCache.filteredUsersTerm = null;
+  derivedAdminDataCache.filteredUsersResult = [];
+  derivedAdminDataCache.filteredCompaniesTerm = null;
+  derivedAdminDataCache.filteredCompaniesResult = [];
+  return derivedAdminDataCache;
 }
 
 function syncWidgetSetupSelections() {
