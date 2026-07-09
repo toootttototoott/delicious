@@ -15,12 +15,14 @@ import {
 import { ensureSchema } from "../lib/db.js";
 import { sendBookingConfirmationForBooking } from "../lib/email.js";
 import { readBody, sendJson } from "../lib/http.js";
+import { checkRateLimit, getClientIp } from "../lib/rate-limit.js";
 import { getSessionUserFromCookieHeader } from "../lib/users.js";
 
 export default async function handler(request, response) {
   try {
     await ensureSchema();
     const session = await getSessionUserFromCookieHeader(request.headers.cookie);
+    const clientIp = getClientIp(request);
     const canAccessBookings = ["admin", "manager", "staff"].includes(session?.authLevel);
 
     if (!canAccessBookings) {
@@ -77,6 +79,24 @@ export default async function handler(request, response) {
       }
 
       if (action === "search") {
+        const searchLimit = checkRateLimit(
+          `booking-search:${session?.id ?? "anonymous"}:${clientIp}`,
+          {
+            windowMs: 5 * 60 * 1000,
+            maxAttempts: 60,
+            blockMs: 10 * 60 * 1000,
+          },
+        );
+        if (searchLimit.limited) {
+          sendJson(
+            response,
+            429,
+            { error: "Too many booking searches. Please wait and try again." },
+            { "Retry-After": String(searchLimit.retryAfterSeconds) },
+          );
+          return;
+        }
+
         const seatCount = await getSeatCountContext(seatCountId);
         if (!seatCount) {
           sendJson(response, 400, { error: "Selected seat count does not exist." });

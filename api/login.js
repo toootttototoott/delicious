@@ -1,5 +1,6 @@
 import { ensureSchema } from "../lib/db.js";
 import { readBody, sendJson } from "../lib/http.js";
+import { checkRateLimit, clearRateLimit, getClientIp } from "../lib/rate-limit.js";
 import { createSessionCookie, normalizeEmail } from "../lib/security.js";
 import { verifyLogin } from "../lib/users.js";
 
@@ -14,10 +15,34 @@ export default async function handler(request, response) {
     const body = await readBody(request);
     const email = normalizeEmail(body.email);
     const password = String(body.password ?? "");
+    const clientIp = getClientIp(request);
 
     if (!email || !password) {
       sendJson(response, 400, { error: "Email and password are required." });
       return;
+    }
+
+    const rateLimitKeys = [
+      `login-ip:${clientIp}`,
+      `login-email:${email}`,
+    ];
+
+    for (const key of rateLimitKeys) {
+      const result = checkRateLimit(key, {
+        windowMs: 15 * 60 * 1000,
+        maxAttempts: 10,
+        blockMs: 30 * 60 * 1000,
+      });
+
+      if (result.limited) {
+        sendJson(
+          response,
+          429,
+          { error: "Too many sign-in attempts. Please wait and try again." },
+          { "Retry-After": String(result.retryAfterSeconds) },
+        );
+        return;
+      }
     }
 
     const session = await verifyLogin(email, password);
@@ -25,6 +50,10 @@ export default async function handler(request, response) {
     if (!session) {
       sendJson(response, 401, { error: "Invalid email or password." });
       return;
+    }
+
+    for (const key of rateLimitKeys) {
+      clearRateLimit(key);
     }
 
     sendJson(

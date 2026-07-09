@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Platform Management Help Guide</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1f2933;
+        --muted: #52606d;
+        --accent: #17352f;
+        --line: #d9e2ec;
+        --soft: #f7f4ee;
+        --paper: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: var(--ink);
+        background: #eef2f5;
+        line-height: 1.55;
+      }
+
+      .page {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        padding: 16mm;
+        background: var(--paper);
+      }
+
+      .page + .page {
+        margin-top: 8mm;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 28px;
+        line-height: 1.1;
+        color: var(--accent);
+      }
+
+      .intro {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .toc,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        padding: 14px 16px;
+      }
+
+      .panel.soft {
+        background: var(--soft);
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      h2 {
+        margin: 20px 0 8px;
+        font-size: 18px;
+        color: var(--accent);
+      }
+
+      h3 {
+        margin: 12px 0 6px;
+        font-size: 14px;
+        color: var(--ink);
+      }
+
+      p {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+
+      ul,
+      ol {
+        margin: 0 0 8px;
+        padding-left: 18px;
+      }
+
+      li {
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+
+      .toc ol {
+        columns: 2;
+        column-gap: 28px;
+      }
+
+      .footer {
+        margin-top: 18px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .page-break {
+        page-break-before: always;
+      }
+
+      @page {
+        size: A4;
+        margin: 10mm;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .page {
+          width: auto;
+          min-height: auto;
+          margin: 0;
+          padding: 0;
+        }
+
+        .page + .page {
+          margin-top: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <p class="eyebrow">Platform Guide</p>
+      <h1>Management Help Guide</h1>
+      <p class="intro">
+        This guide is intended for management, operational, and rollout users who need to understand how to access and use the platform day to day.
+      </p>
+
+      <section class="panel soft">
+        <h2 style="margin-top: 0;">What the Platform Does</h2>
+        <p>The platform manages venue-based bookings across companies, establishments, and seat-count calendars.</p>
+        <ul>
+          <li>Internal management logins with role-based access</li>
+          <li>Booking calendar and day-by-day availability management</li>
+          <li>Manual booking creation, editing, and cancellation</li>
+          <li>Booking search and reporting</li>
+          <li>Company, venue, and seat-count configuration</li>
+          <li>Public booking widget and standalone booking page setup</li>
+          <li>Admin-only AI-assisted theme editing for the widget and booking page</li>
+        </ul>
+      </section>
+
+      <section class="toc" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">Contents</h2>
+        <ol>
+          <li>Access and user roles</li>
+          <li>Signing in</li>
+          <li>Main navigation</li>
+          <li>Daily booking workflow</li>
+          <li>Searching for existing bookings</li>
+          <li>Booking reports</li>
+          <li>Closing or reopening booking days</li>
+          <li>User and access management</li>
+          <li>Company, establishment, and capacity setup</li>
+          <li>Opening hours</li>
+          <li>Booking confirmation email testing</li>
+          <li>Widget setup</li>
+          <li>Public booking experience</li>
+          <li>Theme Editor</li>
+          <li>Page View Editor</li>
+          <li>Prompt library</li>
+          <li>Suggested rollout process</li>
+          <li>Suggested team training topics</li>
+          <li>Support and walkthrough</li>
+        </ol>
+      </section>
+    </main>
+
+    <main class="page page-break">
+      <section class="two-col">
+        <article class="panel">
+          <h2 style="margin-top: 0;">1. Access and User Roles</h2>
+          <p>Users sign in with an email address and password.</p>
+          <ul>
+            <li><strong>Admin</strong>: full access to users, settings, venues, booking tools, widget setup, styling, and system configuration.</li>
+            <li><strong>Manager</strong>: venue-scoped access, booking management, reporting, staff creation, and booking-day closures.</li>
+            <li><strong>Staff</strong>: venue-scoped day-to-day booking and booking search access.</li>
+          </ul>
+          <p>Staff users cannot run reports or manage booking-day closures.</p>
+        </article>
+
+        <article class="panel soft">
+          <h2 style="margin-top: 0;">2. Signing In</h2>
+          <ol>
+            <li>Open the platform login page.</li>
+            <li>Enter your assigned email address and password.</li>
+            <li>After sign-in, the system will take you to the appropriate management view based on your role.</li>
+          </ol>
+          <h3>Password reset</h3>
+          <ol>
+            <li>Select <strong>Forgot password</strong>.</li>
+            <li>Enter the email address linked to the account.</li>
+            <li>Open the reset email.</li>
+            <li>Follow the link and choose a new password.</li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="panel" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">3. Main Navigation</h2>
+        <ul>
+          <li><strong>Settings</strong>: admin-only full management area.</li>
+          <li><strong>Widget</strong>: public booking widget preview.</li>
+          <li><strong>Widget Setup</strong>: choose the live company, establishment, and seat-count source.</li>
+          <li><strong>Theme Editor</strong>: edit or generate booking widget CSS.</li>
+          <li><strong>Page View Editor</strong>: edit or generate the standalone booking page structure and CSS.</li>
+        </ul>
+        <p>Managers and staff are automatically directed to their scoped management workspace rather than the full admin area.</p>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">4. Daily Booking Workflow</h2>
+        <h3>Start of day</h3>
+        <ol>
+          <li>Sign in at the start of service.</li>
+          <li>Review today’s bookings and remaining availability.</li>
+          <li>Confirm important notes or larger bookings.</li>
+          <li>Update the calendar as calls, emails, or manual requests come through.</li>
+        </ol>
+        <h3>Review the calendar</h3>
+        <p>Users select the company, establishment, and seat-count calendar. The calendar then shows open and closed dates, bookable days, time-slot availability, and existing bookings for the selected day.</p>
+      </section>
+    </main>
+
+    <main class="page page-break">
+      <section class="two-col">
+        <article class="panel">
+          <h2 style="margin-top: 0;">Create a Booking</h2>
+          <ol>
+            <li>Open the required date in the booking calendar.</li>
+            <li>Select the time slot.</li>
+            <li>Enter party size, guest details, phone, and notes if needed.</li>
+            <li>Save the booking.</li>
+          </ol>
+          <p>If email delivery is configured, a confirmation email can be sent automatically after the booking is created.</p>
+        </article>
+
+        <article class="panel">
+          <h2 style="margin-top: 0;">Edit or Cancel</h2>
+          <p>To edit a booking, open it from the day view or booking search, update the details, and save the changes.</p>
+          <p>To cancel a booking, open the booking record and delete it.</p>
+        </article>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">5. Searching for Existing Bookings</h2>
+        <p>The booking workspace includes search so staff and managers can locate bookings quickly by guest details such as name, email, or phone.</p>
+        <p>This is useful when:</p>
+        <ul>
+          <li>A guest calls to make changes</li>
+          <li>Staff need to confirm whether a booking already exists</li>
+          <li>A team member needs to find a booking without manually browsing the calendar</li>
+        </ul>
+      </section>
+
+      <section class="panel" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">6. Booking Reports</h2>
+        <p>Booking reports are available to admins and managers.</p>
+        <p>Reports can be filtered by:</p>
+        <ul>
+          <li>Date range</li>
+          <li>Time range</li>
+          <li>Seat-count calendar</li>
+        </ul>
+        <p>Preset ranges are available for <strong>Today</strong>, <strong>This week</strong>, and <strong>This month</strong>, and reports can be exported to CSV.</p>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">7. Closing or Reopening Booking Days</h2>
+        <p>Admins and managers can stop bookings for a specific day where required, for example for private events, public holidays, or operational capacity limits.</p>
+        <p>Staff users do not have access to this control.</p>
+      </section>
+    </main>
+
+    <main class="page page-break">
+      <section class="panel">
+        <h2 style="margin-top: 0;">8. User and Access Management</h2>
+        <div class="two-col">
+          <div>
+            <h3>Admins</h3>
+            <ul>
+              <li>Create users</li>
+              <li>Edit users</li>
+              <li>Delete users</li>
+              <li>Assign roles</li>
+              <li>Assign company and establishment access</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Managers</h3>
+            <ul>
+              <li>Create staff users for their assigned establishment</li>
+              <li>Edit staff users for that establishment</li>
+              <li>Delete staff users for that establishment</li>
+            </ul>
+          </div>
+        </div>
+        <p>Managers cannot create other managers or admins.</p>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">9. Company, Establishment, and Capacity Setup</h2>
+        <p>Admins can maintain the platform structure through the company management area.</p>
+        <ul>
+          <li><strong>Companies</strong>: company name and enquiry email address</li>
+          <li><strong>Establishments</strong>: the venues that belong to a company</li>
+          <li><strong>Seat counts</strong>: maximum seat capacity, guest visit duration, and maximum online booking party size</li>
+        </ul>
+        <p>This setup allows separate calendars for rooms, spaces, service areas, or venue sections.</p>
+      </section>
+
+      <section class="panel" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">10. Opening Hours</h2>
+        <p>Admins can define opening hours for each establishment by weekday. Each day can be marked open or closed, and open days require opening and closing times. Bookings are only offered within configured hours.</p>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">11. Booking Confirmation Email Testing</h2>
+        <p>Admins can test the booking confirmation email setup directly from the settings area to verify the SMTP connection, the sending address, and the guest-facing layout before rollout.</p>
+      </section>
+    </main>
+
+    <main class="page page-break">
+      <section class="panel">
+        <h2 style="margin-top: 0;">12. Widget Setup</h2>
+        <p>The widget setup area is used to choose which live booking source is exposed on the public-facing website.</p>
+        <ul>
+          <li>Choose company</li>
+          <li>Choose establishment</li>
+          <li>Choose seat-count calendar</li>
+        </ul>
+        <p>Once selected, the platform provides the widget URL, standalone booking page URL, and embed code for the external website.</p>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">13. Public Booking Experience</h2>
+        <p>The public-facing booking experience is available in two formats:</p>
+        <ul>
+          <li>Embedded widget</li>
+          <li>Standalone page view</li>
+        </ul>
+        <p>Guests can select a date and time, enter booking details, and submit a booking. If the requested party size is above the configured online booking limit, the guest is directed to submit an enquiry instead.</p>
+      </section>
+
+      <section class="two-col" style="margin-top: 14px;">
+        <article class="panel">
+          <h2 style="margin-top: 0;">14. Theme Editor</h2>
+          <p>The Theme Editor is an admin-only tool for the embedded booking widget.</p>
+          <ul>
+            <li>Manual CSS editing</li>
+            <li>AI-assisted CSS generation</li>
+            <li>Attachment uploads for design references</li>
+            <li>Saved prompt templates</li>
+            <li>Preview before publishing</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2 style="margin-top: 0;">15. Page View Editor</h2>
+          <p>The Page View Editor applies to the standalone booking page.</p>
+          <ul>
+            <li>Manage page content JSON</li>
+            <li>Manage page-specific CSS</li>
+            <li>Generate both content structure and styling</li>
+            <li>Preview before saving</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">16. Prompt Library</h2>
+        <p>Admins can save prompt templates in the editor areas to reuse preferred design direction, brand instructions, or venue-specific styling requests.</p>
+      </section>
+    </main>
+
+    <main class="page page-break">
+      <section class="panel soft">
+        <h2 style="margin-top: 0;">17. Suggested Rollout Process</h2>
+        <ol>
+          <li>Create admin access.</li>
+          <li>Set up companies and establishments.</li>
+          <li>Create seat-count calendars and opening hours.</li>
+          <li>Add manager and staff users.</li>
+          <li>Confirm booking confirmation email settings.</li>
+          <li>Test manual booking creation and editing.</li>
+          <li>Test reporting and booking-day closure workflows.</li>
+          <li>Confirm widget or page-view setup for the live site.</li>
+          <li>Provide team training and issue test logins.</li>
+        </ol>
+      </section>
+
+      <section class="panel" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">18. Suggested Team Training Topics</h2>
+        <ul>
+          <li>Signing in and password reset</li>
+          <li>Using the booking calendar</li>
+          <li>Creating, editing, and cancelling bookings</li>
+          <li>Searching for guest bookings</li>
+          <li>Understanding availability and remaining capacity</li>
+          <li>When to use close-day controls</li>
+          <li>How manager and staff permissions differ</li>
+        </ul>
+      </section>
+
+      <section class="panel soft" style="margin-top: 14px;">
+        <h2 style="margin-top: 0;">19. Support and Walkthrough</h2>
+        <p>Test users can be created for review and training purposes.</p>
+        <p>If helpful, a one-on-one Microsoft Teams walkthrough can also be arranged to run through the platform with the team live, answer operational questions, and confirm the rollout workflow.</p>
+      </section>
+
+      <p class="footer">Prepared as a management and operations help guide for rollout and day-to-day use.</p>
+    </main>
+  </body>
+</html>

@@ -3,9 +3,9 @@ import {
   getSeatCountContext,
   getPublicWidgetCatalogForSeatCount,
   listSeatCountAvailability,
-  listWidgetCatalog,
   sanitizeBookingInput,
 } from "../lib/bookings.js";
+import { listCompaniesTreeForSession } from "../lib/companies.js";
 import { ensureSchema } from "../lib/db.js";
 import {
   sanitizeBookingEnquiryInput,
@@ -13,9 +13,16 @@ import {
   sendBookingEnquiryEmail,
 } from "../lib/email.js";
 import { readBody, sendJson } from "../lib/http.js";
+import {
+  sanitizePublicFormSubmissionMeta,
+  validatePublicFormSubmissionMeta,
+} from "../lib/public-form.js";
+import { checkRateLimit, getClientIp } from "../lib/rate-limit.js";
+import { getSessionUserFromCookieHeader } from "../lib/users.js";
 
 export default async function handler(request, response) {
   await ensureSchema();
+  const clientIp = getClientIp(request);
 
   if (request.method === "GET") {
     const url = new URL(request.url, "https://widget.local");
@@ -24,6 +31,14 @@ export default async function handler(request, response) {
     if (action === "config") {
       const requestedSeatCountId = url.searchParams.get("seatCountId");
       if (requestedSeatCountId) {
+        if (isRateLimited(response, [`widget-config:${clientIp}`, `widget-config-seat:${requestedSeatCountId}`], {
+          windowMs: 5 * 60 * 1000,
+          maxAttempts: 120,
+          blockMs: 5 * 60 * 1000,
+        })) {
+          return;
+        }
+
         const config = await getPublicWidgetCatalogForSeatCount(requestedSeatCountId);
         if (config.error) {
           sendJson(response, 400, { error: config.error });
@@ -34,12 +49,26 @@ export default async function handler(request, response) {
         return;
       }
 
-      const catalog = await listWidgetCatalog();
+      const session = await getSessionUserFromCookieHeader(request.headers.cookie);
+      if (!["admin", "manager", "staff"].includes(session?.authLevel)) {
+        sendJson(response, 403, { error: "A seat-count calendar is required." });
+        return;
+      }
+
+      const catalog = await listCompaniesTreeForSession(session);
       sendJson(response, 200, { catalog });
       return;
     }
 
     if (action === "availability") {
+      if (isRateLimited(response, [`widget-availability:${clientIp}`], {
+        windowMs: 5 * 60 * 1000,
+        maxAttempts: 240,
+        blockMs: 5 * 60 * 1000,
+      })) {
+        return;
+      }
+
       const seatCountId = url.searchParams.get("seatCountId");
       const fromDate = url.searchParams.get("fromDate");
       const days = Number(url.searchParams.get("days") ?? 31);
@@ -63,9 +92,24 @@ export default async function handler(request, response) {
     const action = body.action ?? "create";
 
     if (action === "enquiry") {
+      if (isRateLimited(response, [`widget-enquiry:${clientIp}`], {
+        windowMs: 15 * 60 * 1000,
+        maxAttempts: 12,
+        blockMs: 30 * 60 * 1000,
+      })) {
+        return;
+      }
+
       const config = await getPublicWidgetCatalogForSeatCount(body.seatCountId);
       if (config.error) {
         sendJson(response, 400, { error: config.error });
+        return;
+      }
+
+      const publicFormMeta = sanitizePublicFormSubmissionMeta(body);
+      const publicFormValidation = validatePublicFormSubmissionMeta(publicFormMeta);
+      if (publicFormValidation.error) {
+        sendJson(response, 400, { error: publicFormValidation.error });
         return;
       }
 
@@ -92,9 +136,24 @@ export default async function handler(request, response) {
       return;
     }
 
+    if (isRateLimited(response, [`widget-booking:${clientIp}`], {
+      windowMs: 15 * 60 * 1000,
+      maxAttempts: 12,
+      blockMs: 30 * 60 * 1000,
+    })) {
+      return;
+    }
+
     const input = sanitizeBookingInput(body);
     if (input.error) {
       sendJson(response, 400, { error: input.error });
+      return;
+    }
+
+    const publicFormMeta = sanitizePublicFormSubmissionMeta(body);
+    const publicFormValidation = validatePublicFormSubmissionMeta(publicFormMeta);
+    if (publicFormValidation.error) {
+      sendJson(response, 400, { error: publicFormValidation.error });
       return;
     }
 
@@ -165,4 +224,21 @@ async function trySendBookingEnquiry(input) {
       reason: "Enquiry email could not be sent.",
     };
   }
+}
+
+function isRateLimited(response, keys, options) {
+  for (const key of keys) {
+    const result = checkRateLimit(key, options);
+    if (result.limited) {
+      sendJson(
+        response,
+        429,
+        { error: "Too many requests. Please wait and try again." },
+        { "Retry-After": String(result.retryAfterSeconds) },
+      );
+      return true;
+    }
+  }
+
+  return false;
 }

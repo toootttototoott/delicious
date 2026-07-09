@@ -2,6 +2,10 @@ const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
 const THEME_EDITOR_MODEL_STORAGE_PREFIX = "booking-theme-editor:model:";
 const THEME_EDITOR_REASONING_STORAGE_PREFIX = "booking-theme-editor:reasoning:";
 const THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX = "booking-theme-editor:saved-baseline:";
+const PUBLIC_PRIVACY_POLICY_URL = "/legal-docs/privacy-policy.html";
+const PUBLIC_PRIVACY_POLICY_PDF_URL = "/legal-docs/privacy-policy.pdf";
+const PUBLIC_COLLECTION_NOTICE_URL = "/legal-docs/privacy-collection-notice.html";
+const PUBLIC_COLLECTION_NOTICE_PDF_URL = "/legal-docs/privacy-collection-notice.pdf";
 
 const state = {
   booting: true,
@@ -62,6 +66,8 @@ const state = {
     modal: null,
     confirmationMessage: "",
     enquiryPartySize: "",
+    bookingFormStartedAt: 0,
+    enquiryFormStartedAt: 0,
   },
   adminCalendar: {
     companyId: "",
@@ -873,6 +879,94 @@ function renderTopnavLink(href, label, active) {
   return `<a href="${href}" class="${active ? "is-active" : ""}" ${active ? 'aria-current="page"' : ""} data-link>${label}</a>`;
 }
 
+function renderExternalDocumentLink(href, label) {
+  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
+
+function renderPublicLegalLinks() {
+  return `
+    <div class="public-legal-links">
+      <span>${renderExternalDocumentLink(PUBLIC_COLLECTION_NOTICE_URL, "Privacy Collection Notice")}</span>
+      <span>${renderExternalDocumentLink(PUBLIC_PRIVACY_POLICY_URL, "Privacy Policy")}</span>
+      <span>${renderExternalDocumentLink(PUBLIC_PRIVACY_POLICY_PDF_URL, "Privacy Policy PDF")}</span>
+    </div>
+  `;
+}
+
+function renderPublicPrivacyConsent(scope) {
+  const actionLabel = scope === "enquiry" ? "this enquiry" : "this booking";
+  const checkboxId = scope === "enquiry" ? "enquiry-privacy-consent" : "booking-privacy-consent";
+
+  return `
+    <label class="checkbox compliance-checkbox" for="${checkboxId}">
+      <input id="${checkboxId}" name="privacyConsent" type="checkbox" required />
+      <span>
+        I have read the
+        ${renderExternalDocumentLink(PUBLIC_COLLECTION_NOTICE_URL, "Privacy Collection Notice")}
+        and
+        ${renderExternalDocumentLink(PUBLIC_PRIVACY_POLICY_URL, "Privacy Policy")}
+        and agree to the handling of my information for ${actionLabel}.
+      </span>
+    </label>
+  `;
+}
+
+function renderComplianceDocumentsPanel() {
+  const documents = [
+    {
+      title: "Privacy Policy",
+      description: "Public-facing policy for guest, venue, and platform privacy handling.",
+      htmlHref: PUBLIC_PRIVACY_POLICY_URL,
+      pdfHref: PUBLIC_PRIVACY_POLICY_PDF_URL,
+    },
+    {
+      title: "Privacy Collection Notice",
+      description: "Short APP 5 collection notice linked from public booking and enquiry forms.",
+      htmlHref: PUBLIC_COLLECTION_NOTICE_URL,
+      pdfHref: PUBLIC_COLLECTION_NOTICE_PDF_URL,
+    },
+    {
+      title: "Data Breach Response Plan",
+      description: "Internal incident and NDB handling procedure.",
+      htmlHref: "/api/legal-doc?doc=data-breach-response-plan&format=html",
+      pdfHref: "/api/legal-doc?doc=data-breach-response-plan&format=pdf",
+    },
+    {
+      title: "Privacy Access and Correction Procedure",
+      description: "Internal handling process for APP 12 and APP 13 requests.",
+      htmlHref: "/api/legal-doc?doc=privacy-access-and-correction-procedure&format=html",
+      pdfHref: "/api/legal-doc?doc=privacy-access-and-correction-procedure&format=pdf",
+    },
+    {
+      title: "Data Retention and Deletion Policy",
+      description: "Internal retention and deletion standard for booking, account, and backup data.",
+      htmlHref: "/api/legal-doc?doc=data-retention-and-deletion-policy&format=html",
+      pdfHref: "/api/legal-doc?doc=data-retention-and-deletion-policy&format=pdf",
+    },
+  ];
+
+  return `
+    <div class="compliance-doc-grid">
+      ${documents
+        .map(
+          (document) => `
+            <article class="nested-card compliance-doc-card">
+              <div>
+                <strong>${escapeHtml(document.title)}</strong>
+                <p class="meta">${escapeHtml(document.description)}</p>
+              </div>
+              <div class="stack-inline compliance-doc-links">
+                ${renderExternalDocumentLink(document.htmlHref, "HTML")}
+                ${renderExternalDocumentLink(document.pdfHref, "PDF")}
+              </div>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderPageHeader({ eyebrow, title, meta, actions = "" }) {
   return `
     <article class="panel full-width page-hero">
@@ -1297,6 +1391,21 @@ function renderSettingsPage() {
         meta: "Set opening hours, inspect seat availability, and manage bookings by day.",
         open: true,
         content: `<div class="inner-panel booking-workspace">${renderBookingsPanel()}</div>`,
+      })}
+      ${renderSectionPanel({
+        id: "settings-compliance",
+        eyebrow: "Compliance",
+        title: "Privacy and legal document pack",
+        meta: "Public guest notices and internal privacy procedures, with HTML and PDF links.",
+        open: false,
+        content: `
+          <div class="inner-panel">
+            <p class="eyebrow">Documents</p>
+            <h3>Current compliance pack</h3>
+            <p class="meta">These documents are first-pass templates for this deployment and should have final entity and contact details confirmed before production sign-off.</p>
+            ${renderComplianceDocumentsPanel()}
+          </div>
+        `,
       })}
     </section>
   `;
@@ -1970,6 +2079,10 @@ function renderBookingExperiencePage({ themeRootClass, layoutClass, panelClass, 
             `
         }
       </article>
+      <div class="public-legal-panel">
+        <p class="meta">Privacy information for guests</p>
+        ${renderPublicLegalLinks()}
+      </div>
       ${renderWidgetModal(activeDate)}
     </section>
   `;
@@ -3481,6 +3594,11 @@ function renderWidgetModal(activeDate) {
           <form class="stack widget-form" data-widget-enquiry-form>
             <input type="hidden" name="action" value="enquiry" />
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
+            <input type="hidden" name="formStartedAt" value="${escapeHtml(String(state.widget.enquiryFormStartedAt || Date.now()))}" />
+            <div style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+              <label for="enquiry-website">Website</label>
+              <input id="enquiry-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            </div>
             <div class="form-grid">
               <div class="field">
                 <label for="enquiry-party-size">Party size</label>
@@ -3503,23 +3621,23 @@ function renderWidgetModal(activeDate) {
               </div>
               <div class="field">
                 <label for="enquiry-first-name">First name</label>
-                <input id="enquiry-first-name" name="firstName" required />
+                <input id="enquiry-first-name" name="firstName" maxlength="80" required />
               </div>
               <div class="field">
                 <label for="enquiry-last-name">Last name</label>
-                <input id="enquiry-last-name" name="lastName" required />
+                <input id="enquiry-last-name" name="lastName" maxlength="80" required />
               </div>
               <div class="field full">
                 <label for="enquiry-email">Email</label>
-                <input id="enquiry-email" name="email" type="email" required />
+                <input id="enquiry-email" name="email" type="email" maxlength="320" required />
               </div>
               <div class="field full">
                 <label for="enquiry-phone">Phone</label>
-                <input id="enquiry-phone" name="phone" required />
+                <input id="enquiry-phone" name="phone" type="tel" maxlength="30" required />
               </div>
               <div class="field full">
                 <label for="enquiry-notes">Details</label>
-                <textarea id="enquiry-notes" name="notes" rows="4" placeholder="Tell us anything useful about your enquiry."></textarea>
+                <textarea id="enquiry-notes" name="notes" rows="4" maxlength="1000" placeholder="Tell us anything useful about your enquiry."></textarea>
               </div>
             </div>
             ${
@@ -3527,6 +3645,7 @@ function renderWidgetModal(activeDate) {
                 ? `<p class="meta">This enquiry will be sent to ${escapeHtml(selectedSeatCount.companyEnquiryEmail)}.</p>`
                 : ""
             }
+            ${renderPublicPrivacyConsent("enquiry")}
             <div class="status" aria-live="polite"></div>
             <div class="stack-inline">
               <button type="submit">Send enquiry</button>
@@ -3603,6 +3722,11 @@ function renderWidgetModal(activeDate) {
             <input type="hidden" name="seatCountId" value="${escapeHtml(state.widget.seatCountId)}" />
             <input type="hidden" name="bookingDate" value="${escapeHtml(state.widget.selectedDate)}" />
             <input type="hidden" name="bookingTime" value="${escapeHtml(state.widget.selectedTime)}" />
+            <input type="hidden" name="formStartedAt" value="${escapeHtml(String(state.widget.bookingFormStartedAt || Date.now()))}" />
+            <div style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+              <label for="booking-website">Website</label>
+              <input id="booking-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            </div>
             <div class="form-grid">
               <div class="field">
                 <label for="booking-party-size">Number of people</label>
@@ -3620,25 +3744,26 @@ function renderWidgetModal(activeDate) {
               </div>
               <div class="field">
                 <label for="booking-first-name">First name</label>
-                <input id="booking-first-name" name="firstName" required />
+                <input id="booking-first-name" name="firstName" maxlength="80" required />
               </div>
               <div class="field">
                 <label for="booking-last-name">Last name</label>
-                <input id="booking-last-name" name="lastName" required />
+                <input id="booking-last-name" name="lastName" maxlength="80" required />
               </div>
               <div class="field full">
                 <label for="booking-email">Email</label>
-                <input id="booking-email" name="email" type="email" required />
+                <input id="booking-email" name="email" type="email" maxlength="320" required />
               </div>
               <div class="field full">
                 <label for="booking-phone">Phone</label>
-                <input id="booking-phone" name="phone" required />
+                <input id="booking-phone" name="phone" type="tel" maxlength="30" required />
               </div>
               <div class="field full">
                 <label for="booking-notes">Notes</label>
-                <input id="booking-notes" name="notes" />
+                <input id="booking-notes" name="notes" maxlength="1000" />
               </div>
             </div>
+            ${renderPublicPrivacyConsent("booking")}
             <div class="status" aria-live="polite"></div>
             <div class="stack-inline">
               <button type="submit" ${remainingSeats > 0 ? "" : "disabled"}>Book selected slot</button>
@@ -3872,6 +3997,7 @@ async function handleAction(action, dataset) {
     state.widget.selectedTime = "";
     state.widget.confirmationMessage = "";
     state.widget.enquiryPartySize = "";
+    resetWidgetPublicFormGuards();
     state.widget.modal = "time";
     render();
     return;
@@ -3879,6 +4005,7 @@ async function handleAction(action, dataset) {
 
   if (action === "selectWidgetTime") {
     state.widget.selectedTime = dataset.time;
+    state.widget.bookingFormStartedAt = Date.now();
     state.widget.modal = "details";
     render();
     return;
@@ -3887,12 +4014,14 @@ async function handleAction(action, dataset) {
   if (action === "closeWidgetModal") {
     state.widget.confirmationMessage = "";
     state.widget.enquiryPartySize = "";
+    resetWidgetPublicFormGuards();
     state.widget.modal = null;
     render();
     return;
   }
 
   if (action === "backToTimeModal") {
+    state.widget.bookingFormStartedAt = 0;
     state.widget.modal = "time";
     render();
     return;
@@ -3907,6 +4036,7 @@ async function handleAction(action, dataset) {
 
     const limit = Number(dataset.limit ?? 0);
     state.widget.enquiryPartySize = limit > 0 ? String(limit + 1) : "";
+    state.widget.enquiryFormStartedAt = Date.now();
     state.widget.modal = "enquiry";
     clearStatus("widget");
     render();
@@ -4483,7 +4613,6 @@ async function handleForgotPasswordSubmit(form) {
   try {
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.action = "request";
-    payload.origin = window.location.origin;
 
     const response = await fetch("/api/password-reset", {
       method: "POST",
@@ -4654,6 +4783,7 @@ async function handleWidgetBooking(form) {
   if (maxPartySize > 0 && requestedSeats > maxPartySize) {
     if (selectedSeatCount?.companyEnquiryEmail) {
       state.widget.enquiryPartySize = String(requestedSeats);
+      state.widget.enquiryFormStartedAt = Date.now();
       state.widget.modal = "enquiry";
       setStatus("widget", "info", `For bookings of more than ${maxPartySize}, send an enquiry instead.`);
       render();
@@ -4672,6 +4802,7 @@ async function handleWidgetBooking(form) {
     const data = await postJson("/api/widget", payload, "widget");
     form.reset();
     state.widget.selectedTime = "";
+    state.widget.bookingFormStartedAt = 0;
     state.widget.confirmationMessage =
       data.message ?? "Your booking has been confirmed. Please check your email for the confirmation message.";
     state.widget.modal = "confirmed";
@@ -4698,6 +4829,7 @@ async function handleWidgetEnquiry(form) {
     const data = await postJson("/api/widget", payload, "widget");
     form.reset();
     state.widget.enquiryPartySize = "";
+    state.widget.enquiryFormStartedAt = 0;
     state.widget.modal = "enquirySent";
     setStatus("widget", "success", data.message ?? "Your enquiry has been sent.");
   } catch (error) {
@@ -5270,6 +5402,7 @@ async function refreshWidgetAvailabilityImpl(options = {}) {
     state.widgetAvailability = [];
     state.widget.selectedDate = "";
     state.widget.selectedTime = "";
+    resetWidgetPublicFormGuards();
     state.widget.modal = null;
     return;
   }
@@ -5286,6 +5419,7 @@ async function refreshWidgetAvailabilityImpl(options = {}) {
 
   if (!response.ok) {
     state.widgetAvailability = [];
+    resetWidgetPublicFormGuards();
     state.widget.modal = null;
     setStatus("widget", "error", data.error ?? "Availability could not be loaded.");
     return;
@@ -5298,16 +5432,19 @@ async function refreshWidgetAvailabilityImpl(options = {}) {
   if (!state.widgetAvailability.find((item) => item.date === state.widget.selectedDate)) {
     state.widget.selectedDate = state.widgetAvailability[0]?.date ?? "";
     state.widget.selectedTime = "";
+    resetWidgetPublicFormGuards();
     state.widget.modal = null;
   }
 
   const selectedDate = state.widgetAvailability.find((item) => item.date === state.widget.selectedDate);
   if (selectedDate && !selectedDate.canBook) {
     state.widget.selectedTime = "";
+    resetWidgetPublicFormGuards();
     state.widget.modal = null;
   }
   if (selectedDate && !selectedDate.slots.some((slot) => slot.time === state.widget.selectedTime && slot.available)) {
     state.widget.selectedTime = "";
+    state.widget.bookingFormStartedAt = 0;
     if (state.widget.modal === "details") {
       state.widget.modal = "time";
     }
@@ -6363,6 +6500,11 @@ function formatSavedPromptUpdatedAt(value) {
   }).format(new Date(parsed))}`;
 }
 
+function resetWidgetPublicFormGuards() {
+  state.widget.bookingFormStartedAt = 0;
+  state.widget.enquiryFormStartedAt = 0;
+}
+
 function syncWidgetFromLocation() {
   const seatCountId = getSeatCountIdFromLocation();
 
@@ -6384,6 +6526,7 @@ function syncWidgetFromLocation() {
   state.widgetAvailability = [];
   state.widget.selectedDate = "";
   state.widget.selectedTime = "";
+  resetWidgetPublicFormGuards();
   state.widget.modal = null;
 }
 
