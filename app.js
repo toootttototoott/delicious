@@ -2,10 +2,10 @@ const SECTION_PANEL_STORAGE_KEY = "booking-admin:section-panels";
 const THEME_EDITOR_MODEL_STORAGE_PREFIX = "booking-theme-editor:model:";
 const THEME_EDITOR_REASONING_STORAGE_PREFIX = "booking-theme-editor:reasoning:";
 const THEME_EDITOR_SAVED_BASELINE_STORAGE_PREFIX = "booking-theme-editor:saved-baseline:";
-const PUBLIC_PRIVACY_POLICY_URL = "/legal-docs/privacy-policy.html";
-const PUBLIC_PRIVACY_POLICY_PDF_URL = "/legal-docs/privacy-policy.pdf";
-const PUBLIC_COLLECTION_NOTICE_URL = "/legal-docs/privacy-collection-notice.html";
-const PUBLIC_COLLECTION_NOTICE_PDF_URL = "/legal-docs/privacy-collection-notice.pdf";
+const PUBLIC_PRIVACY_POLICY_URL = "/api/public-doc?doc=privacy-policy&format=html";
+const PUBLIC_PRIVACY_POLICY_PDF_URL = "/api/public-doc?doc=privacy-policy&format=pdf";
+const PUBLIC_COLLECTION_NOTICE_URL = "/api/public-doc?doc=privacy-collection-notice&format=html";
+const PUBLIC_COLLECTION_NOTICE_PDF_URL = "/api/public-doc?doc=privacy-collection-notice&format=pdf";
 
 const state = {
   booting: true,
