@@ -932,6 +932,12 @@ function renderComplianceDocumentsPanel() {
       pdfHref: "/api/legal-doc?doc=data-breach-response-plan&format=pdf",
     },
     {
+      title: "Data Breach Notification Procedure",
+      description: "Internal procedure focused on deciding, approving, and issuing breach notifications.",
+      htmlHref: "/api/legal-doc?doc=data-breach-notification-procedure&format=html",
+      pdfHref: "/api/legal-doc?doc=data-breach-notification-procedure&format=pdf",
+    },
+    {
       title: "Privacy Access and Correction Procedure",
       description: "Internal handling process for APP 12 and APP 13 requests.",
       htmlHref: "/api/legal-doc?doc=privacy-access-and-correction-procedure&format=html",

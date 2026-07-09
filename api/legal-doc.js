@@ -11,6 +11,7 @@ const PUBLIC_DOCS_CSS_PATH = path.resolve(__dirname, "..", "legal-docs", "legal-
 
 const INTERNAL_DOCS = new Map([
   ["data-breach-response-plan", "data-breach-response-plan"],
+  ["data-breach-notification-procedure", "data-breach-notification-procedure"],
   ["privacy-access-and-correction-procedure", "privacy-access-and-correction-procedure"],
   ["data-retention-and-deletion-policy", "data-retention-and-deletion-policy"],
 ]);
